@@ -3,12 +3,29 @@ import argparse
 import sys
 import os
 import time
+import datetime
 from tqdm import tqdm
+import re
+from functools import partial
+
+
+def ask_Y_n():
+    print("Continue? [Y/n] ", end='')
+    if "n" in input():
+        quit()
+
+def convert(input):
+    chars_f = ['á', 'ď', 'í', 'č', 'ť', 'ó', 'ő', 'ö', 'ú', 'ů', 'ř', 'ň', 'é', 'ý', 'ě', 'š', 'ž', 'Ě', 'Š', 'Č', 'Ř', 'Ž', 'Ý', 'Á', 'Í', 'É', 'Ť', 'Ď', 'Ú', 'Ů', 'Ň']
+    chars_t = ['a', 'd', 'i', 'c', 't', 'o', 'o', 'o', 'u', 'u', 'r', 'n', 'e', 'y', 'e', 's', 'z', 'E', 'S', 'C', 'R', 'Z', 'Y', 'A', 'I', 'E', 'T', 'D', 'U', 'U', 'N']
+    s = input
+    for i in range(len(chars_f)):
+        s = s.replace(chars_f[i], chars_t[i])
+    return s
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert fb inbox in json to .csv file')
-    parser.add_argument('-fo', dest='output', required=True, default='output.csv', help='Output filename')
     parser.add_argument('-fi', dest='input', required=False, default='message_1.json', help='Input filename')
+    parser.add_argument('-fo', dest='output', required=True, default='output.csv', help='Output filename')
     parser.add_argument('-pi', dest='path_in', required=False, default='', help='Path to the inbox folder')
     parser.add_argument('-po', dest='path_out', required=False, default='', help='Path to the output folder')
     parser.add_argument('-d', dest='days', required=False, default='1', help='Count window in days')
@@ -26,12 +43,10 @@ if __name__ == '__main__':
     if args.path_out:
         out_file_path = args.path_out + args.output
     
-    try:
-        file = open(out_file_path)
-        print("File " + out_file_path + " already exists and will be overwritten", end='')
-        input()
-        file.close()
-    except:
+    if os.path.exists(out_file_path):
+        print("File " + out_file_path + " already exists and will be overwritten")
+        ask_Y_n()
+    else:
         print("Creating " + args.output, end='')
 
     with open(out_file_path, "w") as file:
@@ -57,8 +72,10 @@ if __name__ == '__main__':
             if debug:
                 print("Loading from: " + file_path, end='')
             try:
-                with open(file_path, "r") as read_f:
-                    data = json.load(read_f)
+                fix_mojibake_escapes = partial(re.compile(rb'\\u00([\da-f]{2})').sub, lambda m: bytes.fromhex(m.group(1).decode()))
+                with open(file_path, 'rb') as binary_data:
+                    repaired = fix_mojibake_escapes(binary_data.read())
+                data = json.loads(repaired.decode('utf8'))
             except:
                 print(" ...file" + args.input + " not found, exitting")
                 sys.exit()
@@ -78,7 +95,6 @@ if __name__ == '__main__':
                         lowest_timestamp = timestamp
                     if timestamp > highest_timestamp:
                         highest_timestamp = timestamp
-                    #print(timestamp)
                 if debug:
                     print(" ...completed")
             else:
@@ -88,10 +104,11 @@ if __name__ == '__main__':
     
     start_find_timestamp = round((time.time() - start_find_timestamp), 3)
     print("Elapsed time: " + str(start_find_timestamp) + "seconds")
+    print()
+
     print("Total files found: " + str(total_files))
-    if debug:
-        print("lowest_timestamp: " + str(lowest_timestamp) + "ms")
-        print("highest_timestamp: " + str(highest_timestamp) + "ms")
+    print("Oldest massage: " + (str(datetime.datetime.fromtimestamp(lowest_timestamp / 1000))[:-7]))
+    print("Newest massage: " + (str(datetime.datetime.fromtimestamp(highest_timestamp / 1000))[:-7]))
     timestamp_diff = round((highest_timestamp - lowest_timestamp) / 3600000)
     print("timestamp_diff: " + str(timestamp_diff) + "hours", end='')
     timestamp_diff = round(timestamp_diff / (24 * 365.25), 2)
@@ -100,10 +117,8 @@ if __name__ == '__main__':
     print(" from that " + str(skipped_contacts) + " skipped")
     print("total_messages: " + str(total_messages))
     print("max_messages: " + str(max_messages))
-    print("Continue?", end='')
-    input()
-
-    #sys.exit()
+    print()
+    ask_Y_n()
 
     print("Opening " + args.output, end='')
     with open(out_file_path, "a") as file:
@@ -121,8 +136,6 @@ if __name__ == '__main__':
         file.write(days + '\n')
         print(" ...done: " + str(day_count) + " * " + args.days + " days")
 
-    #sys.exit()
-
     start_find_timestamp = time.time()
     basepath = args.path_in
     name_count = 1
@@ -138,8 +151,10 @@ if __name__ == '__main__':
             if debug:
                 print("Loading from: " + file_path, end='')
             try:
-                with open(file_path, "r") as read_f:
-                    data = json.load(read_f)
+                fix_mojibake_escapes = partial(re.compile(rb'\\u00([\da-f]{2})').sub, lambda m: bytes.fromhex(m.group(1).decode()))
+                with open(file_path, 'rb') as binary_data:
+                    repaired = fix_mojibake_escapes(binary_data.read())
+                data = json.loads(repaired.decode('utf8'))
             except:
                 print(" ...file" + args.input + " not found, exitting")
                 sys.exit()
@@ -156,7 +171,7 @@ if __name__ == '__main__':
                         file_names.write(''.join(["User", str(name_count), ": ", name, "\n"]))
                     name = "User" + str(name_count)
                 
-                file_line = name + ":;"
+                file_line = convert(name) + ":;"
                 last_m = 0
 
                 with open(out_file_path, "a") as file:
@@ -173,8 +188,10 @@ if __name__ == '__main__':
                                 #print(last_m)
                                 break
                         file_line += (''.join([str(messages_this_day), ";"]))
-                        messages_this_day = 0                    
-                    file.write(''.join([file_line, "\n"]))
+                        messages_this_day = 0
+                    file_line = ''.join([file_line, "\n"])
+                    #print(file_line)
+                    file.write(file_line)
                     if debug:
                         print(" ...completed")
                     #print()
