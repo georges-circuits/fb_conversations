@@ -22,6 +22,12 @@ def convert(input):
         s = s.replace(chars_f[i], chars_t[i])
     return s
 
+class User:
+    def __init__(self, name, meta, messages):
+        self.name = name
+        self.meta = meta
+        self.messages = messages
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert fb inbox in json to .csv file')
     parser.add_argument('-fi', dest='input', required=False, default='message_1.json', help='Input filename')
@@ -53,7 +59,8 @@ if __name__ == '__main__':
         file.write(''.join(["window: ", args.days, " days;threshold: ", args.threshold, " messages per chat;\n"]))
         print(" ...done")
 
-    #print(os.getcwd())
+    #print(os.getcwd();
+
     start_find_timestamp = time.time()
     lowest_timestamp = 9999999999999
     highest_timestamp = 0
