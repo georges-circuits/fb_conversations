@@ -23,13 +23,20 @@ def convert(input):
 
 
 class Meta:
-    def __init__(self, )
+    def __init__(self, num_messages):
+        self.num_messages = num_messages
 
 class User:
-    def __init__(self, name, meta, messages):
+    def __init__(self, name, Meta, messages):
         self.name = name
-        self.meta = meta
+        self.Meta = Meta
         self.messages = messages
+
+    def check_existing(Users, name):
+        for i in range(len(Users)):
+            if name == Users[i].name:
+                return i
+        return -1
 
 
 if __name__ == '__main__':
@@ -38,5 +45,40 @@ if __name__ == '__main__':
     parser.add_argument('-o', dest='path_out', required=False, default='', help='Path to the output folder')
 
     args = parser.parse_args()
+
+    fb_json_file_name = "message_1.json"
+    debug = False
+    Users = []
+
+    basepath = args.path_in
+    print("Loading files...")
+    for entry in tqdm(os.listdir(basepath)):
+        file_path = os.path.join(basepath, entry)
+        if os.path.isdir(file_path):
+            file_path += '/' + fb_json_file_name
+            try:
+                fix_mojibake_escapes = partial(re.compile(rb'\\u00([\da-f]{2})').sub, lambda m: bytes.fromhex(m.group(1).decode()))
+                with open(file_path, 'rb') as binary_data:
+                    repaired = fix_mojibake_escapes(binary_data.read())
+                data = json.loads(repaired.decode('utf8'))
+            except:
+                print("File" + fb_json_file_name + " not found, loading failed.")
+                sys.exit()
+
+            messages = data["messages"]
+            user_name = data["participants"][0]["name"]
+            num_messages = len(messages)
+
+            check = User.check_existing(Users, user_name)
+            if (check == -1):
+                Users.append(User(user_name, Meta(num_messages), messages))
+            else:
+                (Users[check].messages).append(messages)
+
+
+    print(len(Users))
+    for user in Users:
+        print(user.name + ": ", end="")
+        print(user.Meta.num_messages)
 
 
