@@ -2,6 +2,7 @@ import json
 import argparse
 import sys
 import os
+import glob
 import time
 import datetime
 from tqdm import tqdm
@@ -51,41 +52,40 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    fb_json_file_name = "message_1.json"
     debug = False
     Users = []
-
+    total_messages = 0
+    skipped_messages = 0
     skipped_chats = 0
     basepath = args.path_in
+
     print("Loading files...")
     for entry in tqdm(os.listdir(basepath)):
         file_path = os.path.join(basepath, entry)
         if os.path.isdir(file_path):
-            file_path += '/' + fb_json_file_name
-            try:
+            for file_name in glob.glob(os.path.join(file_path, "*.json")):
                 # courtesy of StackOverflow
                 fix_mojibake_escapes = partial(re.compile(rb'\\u00([\da-f]{2})').sub, lambda m: bytes.fromhex(m.group(1).decode()))
-                with open(file_path, 'rb') as binary_data:
+                with open(file_name, 'rb') as binary_data:
                     repaired = fix_mojibake_escapes(binary_data.read())
                 data = json.loads(repaired.decode('utf8'))
-            except:
-                print("File" + fb_json_file_name + " not found, loading failed.")
-                sys.exit()
 
-            # ignore groups and other missleading data
-            if len(data["participants"]) == 2:
                 messages = data["messages"]
                 user_name = data["participants"][0]["name"]
                 num_messages = len(messages)
 
-                check = User.check_existing(Users, user_name)
-                if (check == -1):
-                    Users.append(User(user_name, Meta(num_messages), messages))
+                # ignore groups and other missleading data
+                if len(data["participants"]) == 2:
+                    total_messages += num_messages
+                    check = User.check_existing(Users, user_name)
+                    if (check == -1):
+                        Users.append(User(user_name, Meta(num_messages), messages))
+                    else:
+                        (Users[check].messages).append(messages)
+                        Users[check].Meta.num_messages += num_messages
                 else:
-                    (Users[check].messages).append(messages)
-                    Users[check].Meta.num_messages += num_messages
-            else:
-                skipped_chats += 1
+                    skipped_chats += 1
+                    skipped_messages += num_messages
 
 
     print(len(Users))
@@ -100,6 +100,7 @@ if __name__ == '__main__':
                 print(str(len(i)) + ", ", end="")
             print("in total: " + str(user.Meta.num_messages))
             print("")
-    print("Skipped chats: " + str(skipped_chats))
+    print("Skipped chats: " + str(skipped_chats) + " (" + str(skipped_messages) + " messages)")
+    print("Total loaded messages: " + str(total_messages))
 
 
