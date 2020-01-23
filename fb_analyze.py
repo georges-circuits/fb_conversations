@@ -30,7 +30,12 @@ class User:
     def __init__(self, name, Meta, messages):
         self.name = name
         self.Meta = Meta
-        self.messages = messages
+        # I guess it works
+        try:
+            self.messages.append(messages)
+        except:
+            self.messages = []
+            self.messages.append(messages)
 
     def check_existing(Users, name):
         for i in range(len(Users)):
@@ -50,6 +55,7 @@ if __name__ == '__main__':
     debug = False
     Users = []
 
+    skipped_chats = 0
     basepath = args.path_in
     print("Loading files...")
     for entry in tqdm(os.listdir(basepath)):
@@ -57,6 +63,7 @@ if __name__ == '__main__':
         if os.path.isdir(file_path):
             file_path += '/' + fb_json_file_name
             try:
+                # courtesy of StackOverflow
                 fix_mojibake_escapes = partial(re.compile(rb'\\u00([\da-f]{2})').sub, lambda m: bytes.fromhex(m.group(1).decode()))
                 with open(file_path, 'rb') as binary_data:
                     repaired = fix_mojibake_escapes(binary_data.read())
@@ -65,20 +72,34 @@ if __name__ == '__main__':
                 print("File" + fb_json_file_name + " not found, loading failed.")
                 sys.exit()
 
-            messages = data["messages"]
-            user_name = data["participants"][0]["name"]
-            num_messages = len(messages)
+            # ignore groups and other missleading data
+            if len(data["participants"]) == 2:
+                messages = data["messages"]
+                user_name = data["participants"][0]["name"]
+                num_messages = len(messages)
 
-            check = User.check_existing(Users, user_name)
-            if (check == -1):
-                Users.append(User(user_name, Meta(num_messages), messages))
+                check = User.check_existing(Users, user_name)
+                if (check == -1):
+                    Users.append(User(user_name, Meta(num_messages), messages))
+                else:
+                    (Users[check].messages).append(messages)
+                    Users[check].Meta.num_messages += num_messages
             else:
-                (Users[check].messages).append(messages)
+                skipped_chats += 1
 
 
     print(len(Users))
     for user in Users:
-        print(user.name + ": ", end="")
-        print(user.Meta.num_messages)
+        # print(user.name + ": ", end="")
+        # print(user.Meta.num_messages)
+        # print(len(user.messages))
+        if len(user.messages) > 1:
+            print("Same username with multiple folders found: " + user.name)
+            print("Number of messages in each folder: ", end="")
+            for i in user.messages:
+                print(str(len(i)) + ", ", end="")
+            print("in total: " + str(user.Meta.num_messages))
+            print("")
+    print("Skipped chats: " + str(skipped_chats))
 
 
