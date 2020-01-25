@@ -123,6 +123,23 @@ class Analyze:
         print ("Currently selected " + str(selected / len(self.Users) * 100) + "% of chats (" +
             str(selected_messages / self.num_messages * 100) + " % of messages)")
 
+    def check_sender_name(self):
+        print("Checking names...")
+        name_check_ref = self.Users[0].Files[0].Meta.participants[1]
+        fault = False
+        for user in self.Users:
+            for file in user.Files:
+                if file.Meta.participants[1] != name_check_ref:
+                    print("Should be " + name_check_ref + " but " + file.Meta.participants[1] + " found instead")
+                    print("Found in:")
+                    file.Meta.print()
+                    print("")
+                    fault = True
+        if fault:
+            print("Sender\'s name does not match up every time!")
+            if ask_continue() == False: 
+                abort()
+
     def select_percentage(self, percentage):
         # calculates how many messages are needed to reach target percentage
         m_needed = self.num_messages * int(percentage) / 100
@@ -182,7 +199,7 @@ class Menu:
         else:
             print("Output file name:", chats.output_name)
     
-    def select(pre = 0):
+    def select():
         chats.order()
         chats.print_stats()
         while True:
@@ -292,26 +309,9 @@ if __name__ == '__main__':
     chats = Analyze(users, total_messages, skipped_messages, skipped_chats)
 
     # second participant should always be the sender (should be the same across all files)
-    print("")
-    print("Checking names...")
-    name_check_ref = users[0].Files[0].Meta.participants[1]
-    fault = False
-    for user in users:
-        for file in user.Files:
-            if file.Meta.participants[1] != name_check_ref:
-                print("Should be " + name_check_ref + " but " + file.Meta.participants[1] + " found instead")
-                print("Found in:")
-                file.Meta.print()
-                print("")
-                fault = True
-    if fault:
-        print("Sender\'s name does not match up every time!")
-        if ask_continue() == False: 
-            abort()
+    chats.check_sender_name()
 
     chats.print_stats()
-
-    #print(chats.Users[0].Files[0].messages[0]["content"])
 
     while True:
         print("")
