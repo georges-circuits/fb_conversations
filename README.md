@@ -1,2 +1,3 @@
-# README - Facebook conversation frequency
--write some useful stuff here-
+# Facebook conversations into graphs and more
+
+Info and backstory are [here](https://manakjiri.eu/#facebook_datamining).
