@@ -128,29 +128,32 @@ class Analyze:
         else:
             print ("Chats are already ordered")
 
-    def print_stats(self):
-        print("")
-        print("Stats:")
+    def print_stats(self, to_str = False):
+        s = "\nStats:\n"
         selected = 0
         selected_messages = 0
         for user in self.Users: 
             if user.selected: 
                 selected += 1
                 selected_messages += user.num_messages
-        print ("Number of chats loaded: " + str(len(self.Users)) + " (" + str(selected) + " selected)")
-        print ("Loaded messages: " + str(self.num_messages) + " (" + str(selected_messages) + " selected)")
-        print ("Messages total: " + str(self.num_messages + self.Info.skipped_messages) + 
-            " (including " + str(self.Info.skipped_messages) + " in groups - not loaded)")
-        print ("Currently selected " + str(selected / len(self.Users) * 100) + "% of chats (" +
-            str(selected_messages / self.num_messages * 100) + "% of messages)")
+        s += "Number of chats loaded: " + str(len(self.Users)) + " (" + str(selected) + " selected)" + "\n"
+        s += "Loaded messages: " + str(self.num_messages) + " (" + str(selected_messages) + " selected)" + "\n"
+        s += "Messages total: " + str(self.num_messages + self.Info.skipped_messages) + " (including " + str(self.Info.skipped_messages) + " in groups - not loaded)" + "\n"
+        s += "Currently selected " + str(round(selected / len(self.Users) * 100, 2)) + "% of chats (" + str(round(selected_messages / self.num_messages * 100, 2)) + "% of messages)" + "\n"
+        if to_str:
+            return s
+        print(s, end="")
 
-    def print_times(self):
+    def print_times(self, to_str = False):
         if self.Info.period == 0:
             self.find_edge_messages()
-        print("\nTime stats (UTC):")
-        print("Oldest message:", convert_ms(self.Info.oldest_timestamp))
-        print("Newest message:", convert_ms(self.Info.newest_timestamp))
-        print("Which totals a period of", self.Info.period / 1000 / 3600 / 24 / 365.25, "years")
+        s = "\nTime stats (UTC):\n"
+        s += "Oldest message: " + str(convert_ms(self.Info.oldest_timestamp)) + "\n"
+        s += "Newest message: " + str(convert_ms(self.Info.newest_timestamp)) + "\n"
+        s += "Which totals a period of " + str(round(self.Info.period / 1000 / 3600 / 24 / 365.25, 2)) + " years\n"
+        if to_str:
+            return s
+        print(s, end="")
 
     def check_sender_name(self):
         print("Checking names...")
@@ -210,13 +213,8 @@ class Analyze:
                                 self.Info.newest_timestamp = ms
         self.Info.period = self.Info.newest_timestamp - self.Info.oldest_timestamp
 
-    def graph(self, names_vals):
-        period = int(input("Enter the number of days for a window: ")) * 24 * 3600 * 1000
-        periods_count = int(self.Info.period / period) + 1
-        print(self.Info.period / 1000 / 3600 / 24 / 365.25, "years split into", periods_count, "periodes")
-
+    def graph(self, names_vals, period, periods_count):
         print("Counting messages...")
-
         # go through all users...
         for user in tqdm(self.Users):
             if user.selected:
@@ -311,8 +309,7 @@ class Menu:
 
         print("There are " + str(len(words)) + " words")
         limit = int(input("Type \"0\" to save all or specify the ammount: "))
-        if limit == 0: limit = len(words)
-        if limit > len(words): limit = len(words)
+        if limit == 0 or limit > len(words): limit = len(words)
 
         print("Sorting the words...")
         words_sorted = {}
@@ -345,8 +342,12 @@ class Menu:
         check_output_folder(path)
         chceck_output_file(path + chats.Info.output_name + ".csv")
 
+        period = int(input("Enter the number of days for a window: ")) * 24 * 3600 * 1000
+        periods_count = int(chats.Info.period / period) + 1
+        print(round(chats.Info.period / 1000 / 3600 / 24 / 365.25, 2), "years split into", periods_count, "periods")
+
         names_vals = {}
-        chats.graph(names_vals)
+        chats.graph(names_vals, period, periods_count)
 
         print("Writing data to the file...")
         with open(path + chats.Info.output_name + ".csv", "w") as file_out:
@@ -355,6 +356,20 @@ class Menu:
                 for val in names_vals[chat]:
                     file_out.write(str(val) + ";")
                 file_out.write("\n")
+    
+        with open(path + chats.Info.output_name + "_meta.txt", "w") as file_out:
+            file_out.write(chats.print_stats(True))
+            file_out.write(chats.print_times(True))
+            file_out.write("\nperiod: " + str(period / 3600000 / 24) + " days, periods: " + str(periods_count) + "\n")
+            file_out.write("\nIncluded in the graph:\n")
+            for user in chats.Users:
+                if user.selected:
+                    file_out.write(user.name + ": " + str(user.num_messages) + "\n")
+
+            file_out.write("\nNot included in the graph:\n")
+            for user in chats.Users:
+                if not user.selected:
+                    file_out.write(user.name + ": " + str(user.num_messages) + "\n")
 
 
 if __name__ == '__main__':
