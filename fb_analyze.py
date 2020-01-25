@@ -9,11 +9,21 @@ from tqdm import tqdm
 import re
 from functools import partial
 
-def ask_Y_n():
+def ask_continue():
     print("Continue? [Y/n] ", end='')
-    if "n" or "N" in input():
+    resp = input().lower()
+    if "n" in resp:
         return False
     return True
+
+def convert(input):
+    chars_f = ['á', 'ď', 'í', 'č', 'ť', 'ó', 'ő', 'ö', 'ú', 'ů', 'ř', 'ň', 'é', 'ý', 'ě', 'š', 'ž'] #"áďíčťóőöúůřňéýěšřž"
+    chars_t = ['a', 'd', 'i', 'c', 't', 'o', 'o', 'o', 'u', 'u', 'r', 'n', 'e', 'y', 'e', 's', 'z'] #"adictooouurneyesrz"
+    s = input.lower()
+    for i in range(len(chars_f)):
+        s = s.replace(chars_f[i], chars_t[i])
+    s = re.sub(r'[^a-z ]', "", s)
+    return s
 
 def print_numbered_menu(menu):
     while True:
@@ -36,12 +46,19 @@ def print_numbered_menu(menu):
             print("\nOnly digits allowed")
 
 def abort():
-    print("Aborting!")
+    print("Aborting")
     sys.exit()
 
+def check_output_folder(path):
+    if not os.access(path, os.F_OK):
+        os.mkdir(path)
+        print("Created output folder")
+    else: 
+        print("Using existing output folder")
 
 class Meta:
     def __init__(self, participants, num_messages, path):
+        # just so I do not have to use the "name" keyword
         par = []
         for p in participants:
             par.append(p["name"])
@@ -60,16 +77,160 @@ class File:
         self.messages = messages
 
 class User:
-    def __init__(self, name, File, num_messages):
+    def __init__(self, name, File, num_messages, selected = True):
         self.name = name
         self.Files = File
         self.num_messages = num_messages
+        self.selected = selected
 
-    def check_existing(users, name):
-        for i in range(len(users)):
-            if name == users[i].name:
-                return i
-        return -1
+class Analyze:
+    def __init__(self, users, num_messages, skipped_messages, skipped_chats, output_name = "", ordered = False):
+        self.Users = users
+        self.ordered = ordered
+        self.num_messages = num_messages
+        self.skipped_messages = skipped_messages
+        self.skipped_chats = skipped_chats
+        self.output_name = output_name
+
+
+    def order(self):
+        if self.ordered == False:
+            sorted = False
+            print ("Ordering chats based on ammount of messages...")
+            if len(self.Users) > 1:
+                while not sorted:
+                    sorted = True
+                    for i in range(len(self.Users) - 1):
+                        if self.Users[i].num_messages < self.Users[i + 1].num_messages:
+                            sorted = False
+                            self.Users[i], self.Users[i + 1] = self.Users[i + 1], self.Users[i]
+            self.ordered = True
+        else:
+            print ("Chats are already ordered")
+
+    def print_stats(self):
+        print("")
+        selected = 0
+        selected_messages = 0
+        for user in self.Users: 
+            if user.selected: 
+                selected += 1
+                selected_messages += user.num_messages
+        print ("Number of chats loaded: " + str(len(self.Users)) + " (" + str(selected) + " selected)")
+        print ("Loaded messages: " + str(self.num_messages) + " (" + str(selected_messages) + " selected)")
+        print ("Messages total: " + str(self.num_messages + self.skipped_messages) + 
+            " (" + str(self.skipped_messages) + " in groups - skipped)")
+        print ("Currently selected " + str(selected / len(self.Users) * 100) + "% of chats (" +
+            str(selected_messages / self.num_messages * 100) + " % of messages)")
+
+    def select_percentage(self, percentage):
+        # calculates how many messages are needed to reach target percentage
+        m_needed = self.num_messages * int(percentage) / 100
+        m_so_far = 0
+        for user in self.Users:
+            if m_so_far < m_needed:
+                m_so_far += user.num_messages
+                user.selected = True
+            else:
+                user.selected = False
+
+    def create_dict(self, words):
+        for user in tqdm(self.Users):
+            if user.selected:
+                for file in user.Files:
+                    for i in range(file.Meta.num_messages):
+                        if "content" in file.messages[i]:
+                            message = (convert(file.messages[i]["content"])).split(" ")
+                            for word in message:
+                                if len(word) > 1 and len(word) < 20:
+                                    if word in words:
+                                        words[word] += 1
+                                    else:
+                                        words[word] = 1
+
+
+def check_existing(users, name):
+    for i in range(len(users)):
+        if name == users[i].name:
+            return i
+    return -1
+
+class Menu:
+    def stats():
+        print("")
+        o = print_numbered_menu(["Brief", "With participants", "With participants and meta info"])
+        print("")
+        if o >= 1 and o <= 3:
+            chats.print_stats()
+            if o >= 2:
+                print("")
+                for user in chats.Users:
+                    print(user.name + ": " + str(user.num_messages) + " in " + str(len(user.Files)) 
+                        + " files, selected: " + str(user.selected))
+                    if o == 3:
+                        for file in user.Files:
+                            print(file.Meta.participants, file.Meta.num_messages)
+                            print("Meta:")
+                            file.Meta.print()
+                        print("")
+
+    def output():
+        if chats.output_name == "":
+            print("Output file name not specified")
+            print("Graph output will be saved as .csv and words as .txt under the same name")
+            chats.output_name = input("Enter the name: ")
+        else:
+            print("Output file name:", chats.output_name)
+    
+    def select(pre = 0):
+        chats.order()
+        chats.print_stats()
+        while True:
+            print("")
+            chats.select_percentage(input("Input percentage of users to be selected: "))
+            chats.print_stats()
+            print("")
+            if ask_continue():
+                break
+
+    def most_used_words():
+        print("")
+        o = print_numbered_menu(["All chats", "Only selected"])
+        if o == 1:
+            chats.select_percentage(100)
+            chats.print_stats()
+        elif o == 2:
+            Menu.select()
+
+        print("Scrubbing the words...")
+        words = {}
+        chats.create_dict(words)
+
+        print("There are " + str(len(words)) + " words")
+        limit = int(input("Type \"0\" to save all or specify the ammount: "))
+        if limit == 0: limit = len(words)
+
+        print("Sorting the words...")
+        words_sorted = {}
+        for i in tqdm(range(limit)):
+            max = 0
+            max_key = ""
+            for word in words:
+                if max < words[word]:
+                    max = words[word]
+                    max_key = word
+            words.pop(max_key)
+            words_sorted[max_key] = max
+        
+        Menu.output()
+        print("Writing " + str(len(words_sorted)) + " words to a file")
+        path = args.path_out + chats.output_name + "/"
+        check_output_folder(path)
+        with open(path + chats.output_name + ".txt", "w") as file_out:
+            i = 0
+            for word in words_sorted:
+                i += 1
+                file_out.write(str(i) + ". " + str(word) + ": " + str(words_sorted[word]) + "\n")
 
 
 if __name__ == '__main__':
@@ -78,6 +239,10 @@ if __name__ == '__main__':
     parser.add_argument('-o', dest='path_out', required=False, default='', help='Path to the output folder')
 
     args = parser.parse_args()
+
+    if args.path_out == "":
+        args.path_out = args.path_in[0:args.path_in.index("/messages") + 1]
+        print("Path out set to:", args.path_out)
 
     debug = False
     users = []
@@ -105,66 +270,67 @@ if __name__ == '__main__':
                 user_name = data["participants"][0]["name"]
                 num_messages = len(messages)
 
-                # ignore groups
-                if data["thread_type"] == "Regular":
+                # ignore groups (yes, sometimes there are "groups" with just two participants)
+                if data["thread_type"] == "Regular" and len(data["participants"]) == 2:
                     total_messages += num_messages
 
                     # check whether the user is already in the users array
-                    check = User.check_existing(users, user_name)
+                    check = check_existing(users, user_name)
                     meta_info = Meta(data["participants"], num_messages, file_name)
                     file = File(meta_info, messages)
                     if (check == -1):
                         # add new user
                         users.append(User(user_name, [file], num_messages))
                     else:
-                        # add another message file (thanks fb) and update the meta info
+                        # add another file (thanks fb) to the existing user
                         users[check].Files.append(file)
                         users[check].num_messages += num_messages
                 else:
                     skipped_chats += 1
                     skipped_messages += num_messages
 
-    
-    # second participant should always be the sender (should be the same acros all files)
-    # name_check_ref = users[0].Meta.participants[1]["name"]
-    # for user in users:
-    #     if user.Meta.participants[1]["name"] != name_check_ref:
-    #         print("Sender\'s name does not match up every time!")
-    #         print("Should be " + name_check_ref + " but " + user.Meta.participants[1]["name"] + " found instead")
-    #         print("Found in:")
-    #         user.Meta.print()
-    #         abort()
+    chats = Analyze(users, total_messages, skipped_messages, skipped_chats)
 
+    # second participant should always be the sender (should be the same across all files)
+    print("")
+    print("Checking names...")
+    name_check_ref = users[0].Files[0].Meta.participants[1]
+    fault = False
+    for user in users:
+        for file in user.Files:
+            if file.Meta.participants[1] != name_check_ref:
+                print("Should be " + name_check_ref + " but " + file.Meta.participants[1] + " found instead")
+                print("Found in:")
+                file.Meta.print()
+                print("")
+                fault = True
+    if fault:
+        print("Sender\'s name does not match up every time!")
+        if ask_continue() == False: 
+            abort()
 
-    print("Skipped chats: " + str(skipped_chats) + " (" + str(skipped_messages) + " messages)")
-    print("Total loaded messages: " + str(total_messages))
+    chats.print_stats()
+
+    #print(chats.Users[0].Files[0].messages[0]["content"])
 
     while True:
-        option = print_numbered_menu(["Exit", "Count messages per timeframe", "Compile a list of most used words", "Print stats"])
+        print("")
+        option = print_numbered_menu(["Count messages per timeframe",
+         "Compile a list of most used words", "Print stats", "Order and select users", "Exit"])
         if option == 1:
-            sys.exit()
+            pass
+
         elif option == 2:
-            pass
+            Menu.most_used_words()
+
         elif option == 3:
-            pass
+            Menu.stats()
+            
         elif option == 4:
-            print("users: " + str(len(users)))
-            # for user in users:
-            #     print(user.name + ": " + str(user.Meta.num_messages) + " (files: " + str(user.Meta.num_files) + ")")
-            #     if user.Meta.num_files > 1:
-            #         print("Number of messages in each folder: ", end="")
-            #         for m in user.messages:
-            #             print(str(len(m)) + ", ", end="")
-            # print()
-            for user in users:
-                print(user.name + ": " + str(user.num_messages) + " in " + str(len(user.Files)) + " files")
-                for file in user.Files:
-                    print(file.Meta.participants, file.Meta.num_messages)
-                    print("Meta:")
-                    file.Meta.print()
-                print("")
+            Menu.select()
+
         else:
-            sys.exit()
+            abort()
 
 
 
