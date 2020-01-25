@@ -4,9 +4,9 @@ import sys
 import os
 import glob
 import time
-import datetime
-from tqdm import tqdm
 import re
+from datetime import datetime
+from tqdm import tqdm
 from functools import partial
 
 def ask_continue():
@@ -24,6 +24,9 @@ def convert(input):
         s = s.replace(chars_f[i], chars_t[i])
     s = re.sub(r'[^a-z ]', "", s)
     return s
+
+def convert_ms(value_ms):
+    return datetime.utcfromtimestamp(value_ms / 1000).strftime('%d.%m.%Y %H:%M:%S')
 
 def print_numbered_menu(menu):
     while True:
@@ -56,6 +59,13 @@ def check_output_folder(path):
     else: 
         print("Using existing output folder")
 
+def check_existing(users, name):
+    for i in range(len(users)):
+        if name == users[i].name:
+            return i
+    return -1
+
+
 class Meta:
     def __init__(self, participants, num_messages, path):
         # just so I do not have to use the "name" keyword
@@ -83,14 +93,21 @@ class User:
         self.num_messages = num_messages
         self.selected = selected
 
-class Analyze:
-    def __init__(self, users, num_messages, skipped_messages, skipped_chats, output_name = "", ordered = False):
-        self.Users = users
-        self.ordered = ordered
-        self.num_messages = num_messages
+class Info:
+    def __init__(self, skipped_messages, skipped_chats):
         self.skipped_messages = skipped_messages
         self.skipped_chats = skipped_chats
-        self.output_name = output_name
+        self.output_name = ""
+        self.oldest_timestamp = 0
+        self.newest_timestamp = 0
+        self.period = 0
+
+class Analyze:
+    def __init__(self, Users, num_messages, Info, ordered = False):
+        self.Users = Users
+        self.ordered = ordered
+        self.num_messages = num_messages
+        self.Info = Info
 
 
     def order(self):
@@ -110,6 +127,7 @@ class Analyze:
 
     def print_stats(self):
         print("")
+        print("Stats:")
         selected = 0
         selected_messages = 0
         for user in self.Users: 
@@ -118,10 +136,18 @@ class Analyze:
                 selected_messages += user.num_messages
         print ("Number of chats loaded: " + str(len(self.Users)) + " (" + str(selected) + " selected)")
         print ("Loaded messages: " + str(self.num_messages) + " (" + str(selected_messages) + " selected)")
-        print ("Messages total: " + str(self.num_messages + self.skipped_messages) + 
-            " (" + str(self.skipped_messages) + " in groups - skipped)")
+        print ("Messages total: " + str(self.num_messages + self.Info.skipped_messages) + 
+            " (not including " + str(self.Info.skipped_messages) + " in groups - skipped)")
         print ("Currently selected " + str(selected / len(self.Users) * 100) + "% of chats (" +
-            str(selected_messages / self.num_messages * 100) + " % of messages)")
+            str(selected_messages / self.num_messages * 100) + "% of messages)")
+
+    def print_times(self):
+        if self.Info.period == 0:
+            self.find_edge_messages()
+        print("\nTime stats (UTC):")
+        print("Oldest message:", convert_ms(self.Info.oldest_timestamp))
+        print("Newest message:", convert_ms(self.Info.newest_timestamp))
+        print("Which totals a period of", self.Info.period / 1000 / 3600 / 24 / 365.25, "years")
 
     def check_sender_name(self):
         print("Checking names...")
@@ -150,6 +176,7 @@ class Analyze:
                 user.selected = True
             else:
                 user.selected = False
+        self.find_edge_messages()
 
     def create_dict(self, words):
         for user in tqdm(self.Users):
@@ -165,12 +192,30 @@ class Analyze:
                                     else:
                                         words[word] = 1
 
+    def find_edge_messages(self):
+        print("Finding oldes and newest message...")
+        self.Info.oldest_timestamp = self.Users[0].Files[0].messages[0]["timestamp_ms"]
+        for user in self.Users:
+            if user.selected:
+                for file in user.Files:
+                    for i in range(file.Meta.num_messages):
+                        if "timestamp_ms" in file.messages[i]:
+                            ms = file.messages[i]["timestamp_ms"]
+                            if self.Info.oldest_timestamp > ms:
+                                self.Info.oldest_timestamp = ms
+                            if self.Info.newest_timestamp < ms:
+                                self.Info.newest_timestamp = ms
+        self.Info.period = self.Info.newest_timestamp - self.Info.oldest_timestamp
 
-def check_existing(users, name):
-    for i in range(len(users)):
-        if name == users[i].name:
-            return i
-    return -1
+    def graph(self):
+        print("Counting messages...")
+        for user in tqdm(self.Users):
+            if user.selected:
+                for file in user.Files:
+                    for i in range(file.Meta.num_messages):
+                        if "timestamp_ms" in file.messages[i]:
+                            ms = file.messages[i]["timestamp_ms"]
+                            
 
 class Menu:
     def stats():
@@ -179,6 +224,7 @@ class Menu:
         print("")
         if o >= 1 and o <= 3:
             chats.print_stats()
+            chats.print_times()
             if o >= 2:
                 print("")
                 for user in chats.Users:
@@ -192,12 +238,12 @@ class Menu:
                         print("")
 
     def output():
-        if chats.output_name == "":
+        if chats.Info.output_name == "":
             print("Output file name not specified")
             print("Graph output will be saved as .csv and words as .txt under the same name")
-            chats.output_name = input("Enter the name: ")
+            chats.Info.output_name = input("Enter the name: ")
         else:
-            print("Output file name:", chats.output_name)
+            print("Output file name:", chats.Info.output_name)
     
     def select():
         chats.order()
@@ -241,14 +287,15 @@ class Menu:
         
         Menu.output()
         print("Writing " + str(len(words_sorted)) + " words to a file")
-        path = args.path_out + chats.output_name + "/"
+        path = args.path_out + chats.Info.output_name + "/"
         check_output_folder(path)
-        with open(path + chats.output_name + ".txt", "w") as file_out:
+        with open(path + chats.Info.output_name + ".txt", "w") as file_out:
             i = 0
             for word in words_sorted:
                 i += 1
                 file_out.write(str(i) + ". " + str(word) + ": " + str(words_sorted[word]) + "\n")
 
+    def
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Analyze data downloaded from facebook')
@@ -306,11 +353,13 @@ if __name__ == '__main__':
                     skipped_chats += 1
                     skipped_messages += num_messages
 
-    chats = Analyze(users, total_messages, skipped_messages, skipped_chats)
+    info = Info(skipped_messages, skipped_chats)
+    chats = Analyze(users, total_messages, info)
 
     # second participant should always be the sender (should be the same across all files)
     chats.check_sender_name()
 
+    chats.print_times()
     chats.print_stats()
 
     while True:
