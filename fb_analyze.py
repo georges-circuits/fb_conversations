@@ -16,6 +16,13 @@ def ask_continue():
         return False
     return True
 
+def ask_yes_no():
+    print("[Y/n] ", end='')
+    resp = input().lower()
+    if "n" in resp:
+        return False
+    return True
+
 def convert(s):
     chars_f = ['á', 'ď', 'í', 'č', 'ť', 'ó', 'ő', 'ö', 'ú', 'ů', 'ř', 'ň', 'é', 'ý', 'ě', 'š', 'ž', 'Ě', 'Š', 'Č', 'Ř', 'Ž', 'Ý', 'Á', 'Í', 'É', 'Ť', 'Ď', 'Ú', 'Ů', 'Ň']
     chars_t = ['a', 'd', 'i', 'c', 't', 'o', 'o', 'o', 'u', 'u', 'r', 'n', 'e', 'y', 'e', 's', 'z', 'E', 'S', 'C', 'R', 'Z', 'Y', 'A', 'I', 'E', 'T', 'D', 'U', 'U', 'N']
@@ -68,6 +75,15 @@ def check_existing(users, name):
             return i
     return -1
 
+def create_log():
+    print ("Creating log file...")
+    with open("log.txt", "w") as log:
+        pass
+
+def log(line):
+    with open("log.txt", "a") as log:
+        log.write(line + "\n")
+
 
 class Meta:
     def __init__(self, participants, num_messages, path):
@@ -95,6 +111,7 @@ class User:
         self.Files = File
         self.num_messages = num_messages
         self.selected = selected
+        self.index = ""
 
 class Info:
     def __init__(self, skipped_messages, skipped_chats):
@@ -104,6 +121,7 @@ class Info:
         self.oldest_timestamp = 0
         self.newest_timestamp = 0
         self.period = 0
+        self.anonymize = False
 
 class Analyze:
     def __init__(self, Users, num_messages, Info, ordered = False):
@@ -125,6 +143,8 @@ class Analyze:
                             sorted = False
                             self.Users[i], self.Users[i + 1] = self.Users[i + 1], self.Users[i]
             self.ordered = True
+            for i in range(len(self.Users)):
+                self.Users[i].index = "User" + str(i + 1)
         else:
             print ("Chats are already ordered")
 
@@ -197,6 +217,8 @@ class Analyze:
                                         words[word] += 1
                                     else:
                                         words[word] = 1
+                        else:
+                            log("content not found: " + user.name + ", message: " + str(i))
 
     def find_edge_messages(self):
         print("Finding oldest and newest message...")
@@ -220,9 +242,14 @@ class Analyze:
             if user.selected:
                 
                 # add only selected users to the dictionary
-                names_vals[user.name] = []
-                for i in range(periods_count - 1):
-                    names_vals[user.name].append(0)
+                if self.Info.anonymize:
+                    names_vals[user.index] = []
+                    for i in range(periods_count - 1):
+                        names_vals[user.index].append(0)
+                else:
+                    names_vals[user.name] = []
+                    for i in range(periods_count - 1):
+                        names_vals[user.name].append(0)
                 
                 # ...all user files...
                 for file in user.Files:
@@ -236,7 +263,12 @@ class Analyze:
                             if "timestamp_ms" in file.messages[i]:
                                 ms = file.messages[i]["timestamp_ms"]
                                 if ms >= lowest and ms < highest:
-                                    names_vals[user.name][period_num] += 1
+                                    if self.Info.anonymize:
+                                        names_vals[user.index][period_num] += 1
+                                    else:
+                                        names_vals[user.name][period_num] += 1
+                            else:
+                                log("timestamp_ms not found: " + user.name + ", message: " + str(i))
         # add "combined" to the dict
         combined = []
         for i in range(periods_count - 1):
@@ -266,7 +298,7 @@ class Menu:
             if o >= 2:
                 print("")
                 for user in chats.Users:
-                    print(user.name + ": " + str(user.num_messages) + " in " + str(len(user.Files)) 
+                    print(user.name + " (" + user.index + "): " + str(user.num_messages) + " in " + str(len(user.Files)) 
                         + " files, selected: " + str(user.selected))
                     if o == 3:
                         for file in user.Files:
@@ -275,28 +307,51 @@ class Menu:
                             file.Meta.print()
                         print("")
 
+    def ask_anonymize():
+        print("Anonymize the data? ", end="")
+        chats.Info.anonymize = ask_yes_no()
+
     def output():
         if chats.Info.output_name == "":
             print("\nOutput file name not specified")
             print("Graph output will be saved as .csv and words as .txt under the same name")
+            if chats.Info.anonymize: print ("Anonymize is enabled, _anon will be added to the name")
             chats.Info.output_name = input("Enter the name: ")
+            if chats.Info.anonymize: chats.Info.output_name += "_anon"
         else:
             print("Output file name:", chats.Info.output_name)
     
-    def select():
+    def select(pre = 0):
         chats.order()
         chats.print_stats()
         while True:
             print("")
-            chats.select_percentage(input("Input percentage of users to be selected: "))
+            # the allows pre to be used but also requires the confirmation and enables changes
+            if pre == 0:
+                val = input("Input percentage of users to be selected: ")
+            else:
+                print ("Applying predefined value:", pre)
+                val = pre
+                pre = 0
+            chats.select_percentage(val)
             chats.print_stats()
             print("")
             if ask_continue():
                 break
 
-    def most_used_words():
+    def most_used_words(pre = False, limit = 0):
         print("")
-        o = print_numbered_menu(["All chats", "Only selected"])
+        print("Output path:", args.path_out)
+        Menu.output()
+        path = args.path_out + chats.Info.output_name + "/"
+        check_output_folder(path)
+        chceck_output_file(path + chats.Info.output_name + ".txt")
+
+        if pre:
+            print("Predefined to select all messages")
+            o = 1
+        else:
+            o = print_numbered_menu(["All chats", "Only selected"])
         if o == 1:
             chats.select_percentage(100)
             chats.print_stats()
@@ -308,7 +363,10 @@ class Menu:
         chats.create_dict(words)
 
         print("There are " + str(len(words)) + " words")
-        limit = int(input("Type \"0\" to save all or specify the ammount: "))
+        if limit == 0: 
+            limit = int(input("Type \"0\" to save all or specify the ammount: "))
+        else:
+            print("Predefined limit value:", limit)
         if limit == 0 or limit > len(words): limit = len(words)
 
         print("Sorting the words...")
@@ -323,18 +381,18 @@ class Menu:
             words.pop(max_key)
             words_sorted[max_key] = max
         
-        Menu.output()
         print("Writing " + str(len(words_sorted)) + " words to the file")
-        path = args.path_out + chats.Info.output_name + "/"
-        check_output_folder(path)
         with open(path + chats.Info.output_name + ".txt", "w") as file_out:
             i = 0
             for word in words_sorted:
                 i += 1
                 file_out.write(str(i) + ". " + str(word) + ": " + str(words_sorted[word]) + "\n")
 
-    def graph():
-        Menu.select()
+    def graph(period = 0, select = 0):
+        if select == 0:
+            Menu.select()
+        else:
+            Menu.select(select)
         
         print("Output path:", args.path_out)
         Menu.output()
@@ -342,7 +400,11 @@ class Menu:
         check_output_folder(path)
         chceck_output_file(path + chats.Info.output_name + ".csv")
 
-        period = int(input("Enter the number of days for a window: ")) * 24 * 3600 * 1000
+        if period == 0:
+            period = int(input("Enter the number of days for a window: ")) * 24 * 3600 * 1000
+        else:
+            print("Applying predefined period value:", period)
+            period = period * 24 * 3600 * 1000
         periods_count = int(chats.Info.period / period) + 1
         print(round(chats.Info.period / 1000 / 3600 / 24 / 365.25, 2), "years split into", periods_count, "periods")
 
@@ -364,12 +426,16 @@ class Menu:
             file_out.write("\nIncluded in the graph:\n")
             for user in chats.Users:
                 if user.selected:
-                    file_out.write(user.name + ": " + str(user.num_messages) + "\n")
+                    if chats.Info.anonymize:
+                        file_out.write(user.index + ": " + str(user.num_messages) + "\n")
+                    else:
+                        file_out.write(user.name + ": " + str(user.num_messages) + "\n")
 
-            file_out.write("\nNot included in the graph:\n")
-            for user in chats.Users:
-                if not user.selected:
-                    file_out.write(user.name + ": " + str(user.num_messages) + "\n")
+            if not chats.Info.anonymize:
+                file_out.write("\nNot included in the graph:\n")
+                for user in chats.Users:
+                    if not user.selected:
+                        file_out.write(user.name + ": " + str(user.num_messages) + "\n")
 
 
 if __name__ == '__main__':
@@ -382,6 +448,8 @@ if __name__ == '__main__':
     if args.path_out == "":
         args.path_out = args.path_in[0:args.path_in.index("/messages") + 1]
         print("Path out set to:", args.path_out)
+
+    create_log()
 
     debug = False
     users = []
@@ -439,19 +507,29 @@ if __name__ == '__main__':
 
     while True:
         print("")
-        option = print_numbered_menu(["Count messages per timeframe",
-         "Compile a list of most used words", "Print stats", "Order and select users", "Exit"])
+        option = print_numbered_menu(["Predefined", "Count messages per timeframe",
+         "Compile a list of most used words", "Print stats", "Order and select users",
+         "Anonymize setting", "Exit"])
+        
         if option == 1:
-            Menu.graph()
+            Menu.ask_anonymize()
+            Menu.graph(period = 7, select = 85)
+            Menu.most_used_words(pre = True, limit = 5000)
 
         elif option == 2:
-            Menu.most_used_words()
+            Menu.graph()
 
         elif option == 3:
+            Menu.most_used_words()
+
+        elif option == 4:
             Menu.stats()
             
-        elif option == 4:
+        elif option == 5:
             Menu.select()
+
+        elif option == 6:
+            Menu.ask_anonymize()
 
         else:
             abort()
