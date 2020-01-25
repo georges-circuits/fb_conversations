@@ -16,13 +16,11 @@ def ask_continue():
         return False
     return True
 
-def convert(input):
-    chars_f = ['á', 'ď', 'í', 'č', 'ť', 'ó', 'ő', 'ö', 'ú', 'ů', 'ř', 'ň', 'é', 'ý', 'ě', 'š', 'ž'] #"áďíčťóőöúůřňéýěšřž"
-    chars_t = ['a', 'd', 'i', 'c', 't', 'o', 'o', 'o', 'u', 'u', 'r', 'n', 'e', 'y', 'e', 's', 'z'] #"adictooouurneyesrz"
-    s = input.lower()
+def convert(s):
+    chars_f = ['á', 'ď', 'í', 'č', 'ť', 'ó', 'ő', 'ö', 'ú', 'ů', 'ř', 'ň', 'é', 'ý', 'ě', 'š', 'ž', 'Ě', 'Š', 'Č', 'Ř', 'Ž', 'Ý', 'Á', 'Í', 'É', 'Ť', 'Ď', 'Ú', 'Ů', 'Ň']
+    chars_t = ['a', 'd', 'i', 'c', 't', 'o', 'o', 'o', 'u', 'u', 'r', 'n', 'e', 'y', 'e', 's', 'z', 'E', 'S', 'C', 'R', 'Z', 'Y', 'A', 'I', 'E', 'T', 'D', 'U', 'U', 'N']
     for i in range(len(chars_f)):
         s = s.replace(chars_f[i], chars_t[i])
-    s = re.sub(r'[^a-z ]', "", s)
     return s
 
 def convert_ms(value_ms):
@@ -58,6 +56,11 @@ def check_output_folder(path):
         print("Created output folder")
     else: 
         print("Using existing output folder")
+
+def chceck_output_file(path):
+    with open(path, "w") as file_out:
+        pass
+    print("File created")
 
 def check_existing(users, name):
     for i in range(len(users)):
@@ -137,7 +140,7 @@ class Analyze:
         print ("Number of chats loaded: " + str(len(self.Users)) + " (" + str(selected) + " selected)")
         print ("Loaded messages: " + str(self.num_messages) + " (" + str(selected_messages) + " selected)")
         print ("Messages total: " + str(self.num_messages + self.Info.skipped_messages) + 
-            " (not including " + str(self.Info.skipped_messages) + " in groups - skipped)")
+            " (including " + str(self.Info.skipped_messages) + " in groups - not loaded)")
         print ("Currently selected " + str(selected / len(self.Users) * 100) + "% of chats (" +
             str(selected_messages / self.num_messages * 100) + "% of messages)")
 
@@ -184,7 +187,7 @@ class Analyze:
                 for file in user.Files:
                     for i in range(file.Meta.num_messages):
                         if "content" in file.messages[i]:
-                            message = (convert(file.messages[i]["content"])).split(" ")
+                            message = (convert(file.messages[i]["content"].lower())).split(" ")
                             for word in message:
                                 if len(word) > 1 and len(word) < 20:
                                     if word in words:
@@ -193,7 +196,7 @@ class Analyze:
                                         words[word] = 1
 
     def find_edge_messages(self):
-        print("Finding oldes and newest message...")
+        print("Finding oldest and newest message...")
         self.Info.oldest_timestamp = self.Users[0].Files[0].messages[0]["timestamp_ms"]
         for user in self.Users:
             if user.selected:
@@ -207,15 +210,52 @@ class Analyze:
                                 self.Info.newest_timestamp = ms
         self.Info.period = self.Info.newest_timestamp - self.Info.oldest_timestamp
 
-    def graph(self):
+    def graph(self, names_vals):
+        period = int(input("Enter the number of days for a window: ")) * 24 * 3600 * 1000
+        periods_count = int(self.Info.period / period) + 1
+        print(self.Info.period / 1000 / 3600 / 24 / 365.25, "years split into", periods_count, "periodes")
+
         print("Counting messages...")
+
+        # go through all users...
         for user in tqdm(self.Users):
             if user.selected:
+                
+                # add only selected users to the dictionary
+                names_vals[user.name] = []
+                for i in range(periods_count - 1):
+                    names_vals[user.name].append(0)
+                
+                # ...all user files...
                 for file in user.Files:
-                    for i in range(file.Meta.num_messages):
-                        if "timestamp_ms" in file.messages[i]:
-                            ms = file.messages[i]["timestamp_ms"]
-                            
+                    # ... and the entire periods_count and count the number of messages per each period
+                    for period_num in range(periods_count - 1):
+                        
+                        lowest = self.Info.oldest_timestamp + (period_num * period)
+                        highest = self.Info.oldest_timestamp + ((period_num + 1) * period)
+                        
+                        for i in range(file.Meta.num_messages):
+                            if "timestamp_ms" in file.messages[i]:
+                                ms = file.messages[i]["timestamp_ms"]
+                                if ms >= lowest and ms < highest:
+                                    names_vals[user.name][period_num] += 1
+        # add "combined" to the dict
+        combined = []
+        for i in range(periods_count - 1):
+            sum = 0
+            for name in names_vals:
+                sum += names_vals[name][i]
+            combined.append(sum)
+        names_vals["combined"] = combined
+
+        # add "date" key as the last line
+        names_vals["date"] = []
+        for period_num in range(periods_count - 1):
+            # cut just the date
+            date = (convert_ms(self.Info.oldest_timestamp + (period_num * period)))[0:10]
+            names_vals["date"].append(date)
+
+
 
 class Menu:
     def stats():
@@ -239,7 +279,7 @@ class Menu:
 
     def output():
         if chats.Info.output_name == "":
-            print("Output file name not specified")
+            print("\nOutput file name not specified")
             print("Graph output will be saved as .csv and words as .txt under the same name")
             chats.Info.output_name = input("Enter the name: ")
         else:
@@ -272,6 +312,7 @@ class Menu:
         print("There are " + str(len(words)) + " words")
         limit = int(input("Type \"0\" to save all or specify the ammount: "))
         if limit == 0: limit = len(words)
+        if limit > len(words): limit = len(words)
 
         print("Sorting the words...")
         words_sorted = {}
@@ -286,7 +327,7 @@ class Menu:
             words_sorted[max_key] = max
         
         Menu.output()
-        print("Writing " + str(len(words_sorted)) + " words to a file")
+        print("Writing " + str(len(words_sorted)) + " words to the file")
         path = args.path_out + chats.Info.output_name + "/"
         check_output_folder(path)
         with open(path + chats.Info.output_name + ".txt", "w") as file_out:
@@ -295,7 +336,26 @@ class Menu:
                 i += 1
                 file_out.write(str(i) + ". " + str(word) + ": " + str(words_sorted[word]) + "\n")
 
-    def
+    def graph():
+        Menu.select()
+        
+        print("Output path:", args.path_out)
+        Menu.output()
+        path = args.path_out + chats.Info.output_name + "/"
+        check_output_folder(path)
+        chceck_output_file(path + chats.Info.output_name + ".csv")
+
+        names_vals = {}
+        chats.graph(names_vals)
+
+        print("Writing data to the file...")
+        with open(path + chats.Info.output_name + ".csv", "w") as file_out:
+            for chat in names_vals:
+                file_out.write(convert(chat) + ";")
+                for val in names_vals[chat]:
+                    file_out.write(str(val) + ";")
+                file_out.write("\n")
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Analyze data downloaded from facebook')
@@ -367,7 +427,7 @@ if __name__ == '__main__':
         option = print_numbered_menu(["Count messages per timeframe",
          "Compile a list of most used words", "Print stats", "Order and select users", "Exit"])
         if option == 1:
-            pass
+            Menu.graph()
 
         elif option == 2:
             Menu.most_used_words()
