@@ -42,6 +42,9 @@ def convert(s):
 def convert_ms(value_ms):
     return datetime.utcfromtimestamp(value_ms / 1000).strftime('%d.%m.%Y %H:%M:%S')
 
+def convert_ms_year(value_ms):
+    return round(value_ms / 3600000 / 24 / 365.25, 2)
+
 def print_numbered_menu(menu):
     while True:
         i = 0
@@ -148,7 +151,7 @@ class User:
     def messages_per_day(self):
         self.find_edge_messages()
         # calculate messages per day
-        return int(self.num_messages / (self.period / 3600000 / 24))
+        return round(self.num_messages / (self.period / 3600000 / 24), 2)
 
 class Info:
     def __init__(self, skipped_messages, skipped_chats):
@@ -209,7 +212,7 @@ class Analyze:
         s = "\nTime stats (UTC):\n"
         s += "Oldest message: " + str(convert_ms(self.Info.oldest_timestamp)) + "\n"
         s += "Newest message: " + str(convert_ms(self.Info.newest_timestamp)) + "\n"
-        s += "Which totals a period of " + str(round(self.Info.period / 1000 / 3600 / 24 / 365.25, 2)) + " years\n"
+        s += "Which totals a period of " + str(convert_ms_year(self.Info.period)) + " years\n"
         if to_str:
             return s
         print(s, end="")
@@ -443,12 +446,12 @@ class Menu:
         chceck_output_file(path + chats.Info.output_name + ".csv")
 
         if period == 0:
-            period = int(input("Enter the number of days for a window: ")) * 24 * 3600 * 1000
+            period = int(input("Enter the number of days for a window: "))
         else:
             print("Applying predefined period value:", period)
-            period = period * 24 * 3600 * 1000
+        period = period * 24 * 3600 * 1000
         periods_count = int(chats.Info.period / period) + 1
-        print(round(chats.Info.period / 1000 / 3600 / 24 / 365.25, 2), "years split into", periods_count, "periods")
+        print(str(convert_ms_year(chats.Info.period)), "years split into", periods_count, "periods")
 
         names_vals = {}
         chats.graph(names_vals, period, periods_count)
@@ -461,6 +464,7 @@ class Menu:
                     file_out.write(str(val) + ";")
                 file_out.write("\n")
     
+        print("Writing meta info...")
         with open(path + chats.Info.output_name + "_meta.txt", "w") as file_out:
             file_out.write(chats.print_stats(True))
             file_out.write(chats.print_times(True))
@@ -473,7 +477,8 @@ class Menu:
                         line += user.index + ": " + str(user.num_messages)
                     else:
                         line += user.name + ": " + str(user.num_messages)
-                    line += " (messages/day: " + str(user.messages_per_day()) + ")"
+                    line += "\nFirst-last message: " + str(convert_ms_year(user.period)) + " years"
+                    line += "\n Messages/day: " + str(user.messages_per_day()) + "\n"
                     file_out.write(line + "\n")
 
             if not chats.Info.anonymize:
