@@ -121,6 +121,34 @@ class User:
         self.num_messages = num_messages
         self.selected = selected
         self.index = ""
+        self.oldest_timestamp = 0
+        self.newest_timestamp = 0
+        self.period = 0
+        self.old_new_found = False
+
+    def find_edge_messages(self):
+        if not self.old_new_found:
+            # cannot be zero of course
+            self.oldest_timestamp = self.Files[0].messages[0]["timestamp_ms"]
+            for file in self.Files:
+                for message in file.messages:
+                    if "timestamp_ms" in message:
+                        ms = message["timestamp_ms"]
+                        if self.oldest_timestamp > ms:
+                            self.oldest_timestamp = ms
+                        if self.newest_timestamp < ms:
+                            self.newest_timestamp = ms
+                    else:
+                        log(file.Meta.path + ": " + message + ": timestamp_ms not found")
+            self.period = self.newest_timestamp - self.oldest_timestamp
+            self.old_new_found = True
+        else:
+            log(self.name + ": oldest and newest already found")
+
+    def messages_per_day(self):
+        self.find_edge_messages()
+        # calculate messages per day
+        return int(self.num_messages / (self.period / 3600000 / 24))
 
 class Info:
     def __init__(self, skipped_messages, skipped_chats):
@@ -170,6 +198,7 @@ class Analyze:
         s += "Loaded messages: " + str(self.num_messages) + " (" + str(selected_messages) + " selected)" + "\n"
         s += "Messages total: " + str(self.num_messages + self.Info.skipped_messages) + " (including " + str(self.Info.skipped_messages) + " in groups - not loaded)" + "\n"
         s += "Currently selected " + str(round(selected / len(self.Users) * 100, 2)) + "% of chats (" + str(round(selected_messages / self.num_messages * 100, 2)) + "% of messages)" + "\n"
+        s += "Average per conversation: " + str(int(self.num_messages / len(self.Users))) + " (" + str(int(selected_messages / selected)) + " in selected chats)" + "\n"
         if to_str:
             return s
         print(s, end="")
@@ -216,18 +245,22 @@ class Analyze:
 
     def find_edge_messages(self):
         print("Finding oldest and newest message...")
-        # cannot be zore of course
-        self.Info.oldest_timestamp = self.Users[0].Files[0].messages[0]["timestamp_ms"]
+        # cannot be zore of course... 
+        # this is quite an overkill of a way for setting the initial value ikr
+        # atleast the user.find_edge_messages() woun't run twice
         for user in self.Users:
             if user.selected:
-                for file in user.Files:
-                    for message in file.messages:
-                        if "timestamp_ms" in message:
-                            ms = message["timestamp_ms"]
-                            if self.Info.oldest_timestamp > ms:
-                                self.Info.oldest_timestamp = ms
-                            if self.Info.newest_timestamp < ms:
-                                self.Info.newest_timestamp = ms
+                user.find_edge_messages()
+                self.Info.oldest_timestamp = user.oldest_timestamp
+                break
+        
+        for user in self.Users:
+            if user.selected:
+                user.find_edge_messages()
+                if self.Info.oldest_timestamp > user.oldest_timestamp:
+                    self.Info.oldest_timestamp = user.oldest_timestamp
+                if self.Info.newest_timestamp < user.newest_timestamp:
+                    self.Info.newest_timestamp = user.newest_timestamp
         self.Info.period = self.Info.newest_timestamp - self.Info.oldest_timestamp
 
     def create_dict(self, words):
@@ -432,13 +465,16 @@ class Menu:
             file_out.write(chats.print_stats(True))
             file_out.write(chats.print_times(True))
             file_out.write("\nperiod: " + str(period / 3600000 / 24) + " days, periods: " + str(periods_count) + "\n")
-            file_out.write("\nIncluded in the graph:\n")
+            file_out.write("\nIncluded in the graph (selected users):\n")
             for user in chats.Users:
                 if user.selected:
+                    line = ""
                     if chats.Info.anonymize:
-                        file_out.write(user.index + ": " + str(user.num_messages) + "\n")
+                        line += user.index + ": " + str(user.num_messages)
                     else:
-                        file_out.write(user.name + ": " + str(user.num_messages) + "\n")
+                        line += user.name + ": " + str(user.num_messages)
+                    line += " (messages/day: " + str(user.messages_per_day()) + ")"
+                    file_out.write(line + "\n")
 
             if not chats.Info.anonymize:
                 file_out.write("\nNot included in the graph:\n")
