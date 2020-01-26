@@ -9,6 +9,15 @@ from datetime import datetime
 from tqdm import tqdm
 from functools import partial
 
+def parse_obj(obj):
+    for key in obj:
+        if isinstance(obj[key], str):
+            obj[key] = obj[key].encode('latin_1').decode('utf-8')
+        elif isinstance(obj[key], list):
+            obj[key] = list(map(lambda x: x if type(x) != str else x.encode('latin_1').decode('utf-8'), obj[key]))
+        pass
+    return obj
+
 def ask_continue():
     print("Continue? [Y/n] ", end='')
     resp = input().lower()
@@ -132,21 +141,22 @@ class Analyze:
 
 
     def order(self):
-        if self.ordered == False:
-            sorted = False
-            print ("Ordering chats based on ammount of messages...")
-            if len(self.Users) > 1:
-                while not sorted:
-                    sorted = True
-                    for i in range(len(self.Users) - 1):
-                        if self.Users[i].num_messages < self.Users[i + 1].num_messages:
-                            sorted = False
-                            self.Users[i], self.Users[i + 1] = self.Users[i + 1], self.Users[i]
-            self.ordered = True
-            for i in range(len(self.Users)):
-                self.Users[i].index = "User" + str(i + 1)
-        else:
-            print ("Chats are already ordered")
+        sorted = False
+        already_sorted = True
+        print ("Ordering chats based on ammount of messages...")
+        if len(self.Users) > 1:
+            while not sorted:
+                sorted = True
+                for i in range(len(self.Users) - 1):
+                    if self.Users[i].num_messages < self.Users[i + 1].num_messages:
+                        sorted = False
+                        already_sorted = False
+                        self.Users[i], self.Users[i + 1] = self.Users[i + 1], self.Users[i]
+        self.ordered = True
+        for i in range(len(self.Users)):
+            self.Users[i].index = "User" + str(i + 1)
+        if already_sorted:
+            print("Already sorted")
 
     def print_stats(self, to_str = False):
         s = "\nStats:\n"
@@ -211,9 +221,9 @@ class Analyze:
         for user in self.Users:
             if user.selected:
                 for file in user.Files:
-                    for i in range(file.Meta.num_messages):
-                        if "timestamp_ms" in file.messages[i]:
-                            ms = file.messages[i]["timestamp_ms"]
+                    for message in file.messages:
+                        if "timestamp_ms" in message:
+                            ms = message["timestamp_ms"]
                             if self.Info.oldest_timestamp > ms:
                                 self.Info.oldest_timestamp = ms
                             if self.Info.newest_timestamp < ms:
@@ -233,8 +243,6 @@ class Analyze:
                                         words[word] += 1
                                     else:
                                         words[word] = 1
-                        else:
-                            log("content not found: " + user.name + ", message: " + str(i))
 
     def graph(self, names_vals, period, periods_count):
         print("Counting messages...")
@@ -467,11 +475,12 @@ if __name__ == '__main__':
             # iterate through all .json files
             for file_name in glob.glob(os.path.join(file_path, "*.json")):
 
-                # courtesy of StackOverflow (fixes the cursed character encoding)
-                fix_mojibake_escapes = partial(re.compile(rb'\\u00([\da-f]{2})').sub, lambda m: bytes.fromhex(m.group(1).decode()))
-                with open(file_name, 'rb') as binary_data:
-                    repaired = fix_mojibake_escapes(binary_data.read())
-                data = json.loads(repaired.decode('utf8'))
+                # courtesy of StackOverflow (fixes the cursed character encoding) 
+                # this is updated because the previous solution (fix_mojibake_escapes)
+                # stopped working with newer downloads... this one is even more comlicated
+                # https://stackoverflow.com/questions/50008296/facebook-json-badly-encoded?rq=1
+                with open(file_name, "r") as json_file:
+                    data = json.load(json_file, object_hook=parse_obj)
 
                 # parse the important data
                 messages = data["messages"]
@@ -496,6 +505,8 @@ if __name__ == '__main__':
                 else:
                     skipped_chats += 1
                     skipped_messages += num_messages
+        else:
+            log(file_path + " is not dir")
 
     info = Info(skipped_messages, skipped_chats)
     chats = Analyze(users, total_messages, info)
