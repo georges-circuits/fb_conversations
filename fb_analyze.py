@@ -93,7 +93,7 @@ def create_log():
         pass
 
 def log(line):
-    with open("log.txt", "a") as log:
+    with open("log.txt", "a", encoding="utf-8") as log:
         log.write(line + "\n")
 
 
@@ -355,6 +355,8 @@ class Menu:
     def ask_anonymize():
         print("Anonymize the data? ", end="")
         chats.Info.anonymize = ask_yes_no()
+        # so it asks for a new name
+        chats.Info.output_name = ""
 
     def output():
         if chats.Info.output_name == "":
@@ -427,7 +429,7 @@ class Menu:
             words_sorted[max_key] = max
         
         print("Writing " + str(len(words_sorted)) + " words to the file")
-        with open(path + chats.Info.output_name + ".txt", "w") as file_out:
+        with open(path + chats.Info.output_name + ".txt", "w", encoding="utf-8") as file_out:
             i = 0
             for word in words_sorted:
                 i += 1
@@ -457,7 +459,7 @@ class Menu:
         chats.graph(names_vals, period, periods_count)
 
         print("Writing data to the file...")
-        with open(path + chats.Info.output_name + ".csv", "w") as file_out:
+        with open(path + chats.Info.output_name + ".csv", "w", encoding="utf-8") as file_out:
             for chat in names_vals:
                 file_out.write(convert(chat) + ";")
                 for val in names_vals[chat]:
@@ -465,7 +467,7 @@ class Menu:
                 file_out.write("\n")
     
         print("Writing meta info...")
-        with open(path + chats.Info.output_name + "_meta.txt", "w") as file_out:
+        with open(path + chats.Info.output_name + "_meta.txt", "w", encoding="utf-8") as file_out:
             file_out.write(chats.print_stats(True))
             file_out.write(chats.print_times(True))
             file_out.write("\nperiod: " + str(period / 3600000 / 24) + " days, periods: " + str(periods_count) + "\n")
@@ -478,7 +480,7 @@ class Menu:
                     else:
                         line += user.name + ": " + str(user.num_messages)
                     line += "\nFirst-last message: " + str(convert_ms_year(user.period)) + " years"
-                    line += "\n Messages/day: " + str(user.messages_per_day()) + "\n"
+                    line += "\nMessages/day: " + str(user.messages_per_day()) + "\n"
                     file_out.write(line + "\n")
 
             if not chats.Info.anonymize:
@@ -495,11 +497,16 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.path_out == "":
-        args.path_out = args.path_in[0:args.path_in.index("/messages") + 1]
-        print("Path out set to:", args.path_out)
-
     create_log()
+    
+    if args.path_out == "":
+        try:
+            args.path_out = args.path_in[0:args.path_in.index("/messages") + 1]
+            print("Path out set to:", args.path_out)
+        except:
+            args.path_out = args.path_in[0:args.path_in.index("\messages") + 1]
+            print("Path out set to:", args.path_out)
+            log("We are on windows! :)")
 
     debug = False
     users = []
