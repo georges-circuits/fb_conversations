@@ -204,6 +204,22 @@ class Analyze:
                 user.selected = False
         self.find_edge_messages()
 
+    def find_edge_messages(self):
+        print("Finding oldest and newest message...")
+        # cannot be zore of course
+        self.Info.oldest_timestamp = self.Users[0].Files[0].messages[0]["timestamp_ms"]
+        for user in self.Users:
+            if user.selected:
+                for file in user.Files:
+                    for i in range(file.Meta.num_messages):
+                        if "timestamp_ms" in file.messages[i]:
+                            ms = file.messages[i]["timestamp_ms"]
+                            if self.Info.oldest_timestamp > ms:
+                                self.Info.oldest_timestamp = ms
+                            if self.Info.newest_timestamp < ms:
+                                self.Info.newest_timestamp = ms
+        self.Info.period = self.Info.newest_timestamp - self.Info.oldest_timestamp
+
     def create_dict(self, words):
         for user in tqdm(self.Users):
             if user.selected:
@@ -219,21 +235,6 @@ class Analyze:
                                         words[word] = 1
                         else:
                             log("content not found: " + user.name + ", message: " + str(i))
-
-    def find_edge_messages(self):
-        print("Finding oldest and newest message...")
-        self.Info.oldest_timestamp = self.Users[0].Files[0].messages[0]["timestamp_ms"]
-        for user in self.Users:
-            if user.selected:
-                for file in user.Files:
-                    for i in range(file.Meta.num_messages):
-                        if "timestamp_ms" in file.messages[i]:
-                            ms = file.messages[i]["timestamp_ms"]
-                            if self.Info.oldest_timestamp > ms:
-                                self.Info.oldest_timestamp = ms
-                            if self.Info.newest_timestamp < ms:
-                                self.Info.newest_timestamp = ms
-        self.Info.period = self.Info.newest_timestamp - self.Info.oldest_timestamp
 
     def graph(self, names_vals, period, periods_count):
         print("Counting messages...")
