@@ -45,6 +45,12 @@ def convert_ms(value_ms):
 def convert_ms_year(value_ms):
     return round(value_ms / 3600000 / 24 / 365.25, 2)
 
+def convert_ms_date(value_ms):
+    return convert_ms(value_ms)[:10]
+
+def convert_ms_time(value_ms):
+    return convert_ms(value_ms)[11:]
+
 def print_numbered_menu(menu):
     while True:
         i = 0
@@ -72,14 +78,16 @@ def abort():
 def check_output_folder(path):
     if not os.access(path, os.F_OK):
         os.mkdir(path)
-        print("Created output folder")
+        print("Created folder")
     else: 
         print("Using existing output folder")
+    print(path)
 
-def chceck_output_file(path):
+def check_output_file(path):
     with open(path, "w") as file_out:
         pass
     print("File created")
+    print(path)
 
 def check_existing(users, name):
     for i in range(len(users)):
@@ -169,6 +177,7 @@ class Analyze:
         self.ordered = ordered
         self.num_messages = num_messages
         self.Info = Info
+        self.only_participants = []
 
 
     def order(self):
@@ -272,13 +281,20 @@ class Analyze:
                 for file in user.Files:
                     for i in range(file.Meta.num_messages):
                         if "content" in file.messages[i]:
-                            message = (convert(file.messages[i]["content"].lower())).split(" ")
-                            for word in message:
-                                if len(word) > 1 and len(word) < 20:
-                                    if word in words:
-                                        words[word] += 1
-                                    else:
-                                        words[word] = 1
+                            message = None
+                            if self.only_participants:
+                                if file.messages[i]["sender_name"] in self.only_participants:
+                                    message = file.messages[i]["content"]
+                            else:
+                                message = file.messages[i]["content"]
+                            if message:
+                                message = (convert(message.lower())).split(" ")
+                                for word in message:
+                                    if len(word) > 1 and len(word) < 20:
+                                        if word in words:
+                                            words[word] += 1
+                                        else:
+                                            words[word] = 1
 
     def graph(self, names_vals, period, periods_count):
         print("Counting messages...")
@@ -329,7 +345,6 @@ class Analyze:
             # cut just the date
             date = (convert_ms(self.Info.oldest_timestamp + (period_num * period)))[0:10]
             names_vals["date"].append(date)
-
 
 
 class Menu:
@@ -392,18 +407,21 @@ class Menu:
         Menu.output()
         path = args.path_out + chats.Info.output_name + "/"
         check_output_folder(path)
-        chceck_output_file(path + chats.Info.output_name + ".txt")
+        check_output_file(path + chats.Info.output_name + ".txt")
 
         if pre:
             print("Predefined to select all messages")
             o = 1
         else:
-            o = print_numbered_menu(["All chats", "Only selected"])
+            o = print_numbered_menu(["All chats", "Only selected chats", "Only the sender"])
         if o == 1:
             chats.select_percentage(100)
             chats.print_stats()
         elif o == 2:
             Menu.select()
+        elif o == 3:
+            chats.only_participants = []
+            chats.only_participants.append(chats.Users[0].Files[0].Meta.participants[1])
 
         print("Scrubbing the words...")
         words = {}
@@ -445,7 +463,7 @@ class Menu:
         Menu.output()
         path = args.path_out + chats.Info.output_name + "/"
         check_output_folder(path)
-        chceck_output_file(path + chats.Info.output_name + ".csv")
+        check_output_file(path + chats.Info.output_name + ".csv")
 
         if period == 0:
             period = int(input("Enter the number of days for a window: "))
@@ -471,6 +489,7 @@ class Menu:
             file_out.write(chats.print_stats(True))
             file_out.write(chats.print_times(True))
             file_out.write("\nperiod: " + str(period / 3600000 / 24) + " days, periods: " + str(periods_count) + "\n")
+            
             file_out.write("\nIncluded in the graph (selected users):\n")
             for user in chats.Users:
                 if user.selected:
