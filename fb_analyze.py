@@ -43,7 +43,7 @@ def convert_ms(value_ms):
     return datetime.utcfromtimestamp(value_ms / 1000).strftime('%d.%m.%Y %H:%M:%S')
 
 def convert_ms_year(value_ms):
-    return round(value_ms / 3600000 / 24 / 365.25, 2)
+    return round(value_ms / 1000 / 60 / 60 / 24 / 365.25, 2)
 
 def convert_ms_date(value_ms):
     return convert_ms(value_ms)[:10]
@@ -178,7 +178,6 @@ class Analyze:
         self.num_messages = num_messages
         self.Info = Info
         self.only_participants = []
-
 
     def order(self):
         sorted = False
@@ -612,7 +611,4 @@ if __name__ == '__main__':
 
         else:
             abort()
-
-
-
 
