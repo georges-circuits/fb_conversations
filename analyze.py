@@ -17,12 +17,14 @@ def main():
     print("Loading files...")
     user = fb.Inbox(args.path_in)
     
+    user.select_based_on_percentage(80)
+
     print()
     for chat in user.get_selected():
-        print(chat.meta.info())
+        print(chat.get_debug())
     
-    for par in user.meta.participants:
-        print(par)
+    print(user.get_stats())
+    print(user.get_times())
 
 
 
