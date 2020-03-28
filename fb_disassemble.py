@@ -95,7 +95,8 @@ class Inbox:
                         self.chats[i], self.chats[i + 1] = self.chats[i + 1], self.chats[i]
         self.ordered = True
         for i in range(self.meta.files_count):
-            self.chats[i].index = i
+            self.chats[i].index = i + 1
+            self.chats[i].index_verbose = f'Chat{i + 1}'
         if already_sorted:
             print("Already ordered")
 
@@ -144,7 +145,10 @@ class Chat:
         self.type = ''
         self.messages = None
         self.selected = True
+        
+        # indexes are assigned by Inbox._order() and start from 1
         self.index = -1
+        self.index_verbose = ""
 
         files = 0
         for file_name in glob.glob(os.path.join(path_to_inbox, "*.json")):
@@ -190,6 +194,16 @@ class Chat:
     def is_selected(self):
         return self.selected
     
+    def get_stats(self):
+        return (
+            f'Messages: {self.meta.num_messages}\n'
+            f'First-last message: {convert_ms_year(self.meta.period)} years\n'
+            f'Messages per day: {round(self.meta.num_messages / (self.meta.period / 1000 / 3600 / 24), 2)}\n'
+            f'Oldest message: {convert_ms(self.meta.oldest_timestamp)}\n'
+            f'Newest message: {convert_ms(self.meta.newest_timestamp)}\n'
+            f'Chat type: {self.type}\n'
+        )
+    
     def get_debug(self):
         return (
             f'name: {self.name}\n'
@@ -227,3 +241,10 @@ def convert_ms(value_ms):
 
 def convert_ms_year(value_ms):
     return round(value_ms / 1000 / 3600 / 24 / 365.25, 2)
+
+def convert(s):
+    chars_f = ['á', 'ď', 'í', 'č', 'ť', 'ó', 'ő', 'ö', 'ú', 'ů', 'ř', 'ň', 'é', 'ý', 'ě', 'š', 'ž', 'Ě', 'Š', 'Č', 'Ř', 'Ž', 'Ý', 'Á', 'Í', 'É', 'Ť', 'Ď', 'Ú', 'Ů', 'Ň']
+    chars_t = ['a', 'd', 'i', 'c', 't', 'o', 'o', 'o', 'u', 'u', 'r', 'n', 'e', 'y', 'e', 's', 'z', 'E', 'S', 'C', 'R', 'Z', 'Y', 'A', 'I', 'E', 'T', 'D', 'U', 'U', 'N']
+    for i in range(len(chars_f)):
+        s = s.replace(chars_f[i], chars_t[i])
+    return s

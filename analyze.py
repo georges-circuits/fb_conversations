@@ -2,22 +2,26 @@ import argparse, os, sys
 import fb_disassemble as fb
 
 class Dialogs:
-    def ask_continue_Y_n(self):
-        print("Continue? [Y/n] ", end='')
-        resp = input().lower()
-        if "n" in resp or "N" in resp:
-            return False
-        return True
+    def __init__(self):
+        self.output_file_name = ""
+        self.output_path = ""
+        self.anonymize = False
 
-    def select_users(self, inbox):
+    def select_chats(self, inbox):
         self.print_stats_and_times(inbox)
         while True:
             print()
-            inbox.select_based_on_percentage(int(input("Input percentage of users to be selected: ")))
+            # TODO: so it won't crash when you misstype
+            i = int(input("Input percentage of users to be selected: "))
+            inbox.select_based_on_percentage(i)
             print("")
             self.print_stats_and_times(inbox)
-            if self.ask_continue_Y_n():
+            if self.ask_Y_n("Continue?"):
                 break
+                
+    def print_stats_and_times(self, inbox):
+        print(inbox.get_stats())
+        print(inbox.get_times())
     
     def print_numbered_menu(self, menu):
         while True:
@@ -51,20 +55,129 @@ class Dialogs:
         else:
             output()
     
+    def output_file_name_set(self):
+        if self.output_file_name == "":
+            print("Output file name not yet specified")
+            self.output_file_name = input("Enter output file name (without extension): ")
+        else:
+            print(f'Current output file name is: {self.output_file_name}')
+            if not self.ask_Y_n("Do you want to keep it?"):
+                self.output_file_name = input("Enter output file name (without extension): ")
+    
+    def create_output_folder(self, path):
+        if not os.access(path, os.F_OK):
+            os.mkdir(path)
+            print("Created folder", end=" ")
+        else: 
+            print("Using existing output folder", end=" ")
+        print(path)
+
+    def check_output_file(self, path):
+        if os.path.isfile(path):
+            if not self.ask_Y_n(f'File {self.cut_file_name(path)} already exist. Overwrite?'):
+                return False
+        with open(path, "w") as _:
+            pass
+        print(f"File {self.cut_file_name(path)} created")
+        return True
+    
+    def cut_file_name(self, path):
+        return path[path.rindex("/") + 1:]
+    
     def abort(self):
         print("Aborting")
         sys.exit()
 
-    def print_stats_and_times(self, inbox):
-        print(inbox.get_stats())
-        print(inbox.get_times())
+    def ask_Y_n(self, message = ""):
+        print(f"{message} [Y/n] ", end='')
+        resp = input().lower()
+        if "n" in resp:
+            return False
+        return True
 
 class Analyze:
     def __init__(self, diags):
         self.diags = diags
 
     def get_graph(self, inbox):
-        self.diags.select_users(inbox)
+        self.diags.output_file_name_set()
+
+        out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
+        self.diags.create_output_folder(out_path)
+
+        csv_path = os.path.join(out_path, self.diags.output_file_name + ".csv")
+        meta_path = os.path.join(out_path, self.diags.output_file_name + "_meta.txt")
+        if not self.diags.check_output_file(csv_path): return
+        if not self.diags.check_output_file(meta_path): return
+        print()
+
+        self.diags.select_chats(inbox)
+
+        period = int(input("\nEnter the number of days for a window: "))
+        period = period * 24 * 3600 * 1000
+        periods_count = int(inbox.meta.period / period) + 1
+        periods_meta = f'{fb.convert_ms_year(inbox.meta.period)} years split into {periods_count} periods'
+        print(periods_meta)
+
+        print("Counting messages...\n")
+        names_vals = {}
+        # go through all chats...
+        for chat in inbox.get_selected():          
+            # initiate the dictionary
+            key = chat.index_verbose if self.diags.anonymize else chat.name
+            names_vals[key] = []
+            for i in range(periods_count - 1):
+                names_vals[key].append(0)
+            
+            # ...and the entire periods_count and count the number of messages per each period
+            for period_num in range(periods_count - 1):
+                
+                lowest = inbox.meta.oldest_timestamp + (period_num * period)
+                highest = inbox.meta.oldest_timestamp + ((period_num + 1) * period)
+                
+                for message in chat.messages:
+                    if "timestamp_ms" in message:
+                        ms = message["timestamp_ms"]
+                        if ms >= lowest and ms < highest:
+                            names_vals[key][period_num] += 1
+        
+        date_list = []
+        combined = []
+        for i in range(periods_count - 1):
+            sum = 0
+            for name in names_vals:
+                sum += names_vals[name][i]
+            combined.append(sum)
+            #FIXME: (make nicer) cut just the date
+            date = (fb.convert_ms(inbox.meta.oldest_timestamp + (i * period)))[0:10]
+            date_list.append(date)
+        # add "combined" to the dict, add "date" key as the last line
+        names_vals["combined"], names_vals["date"] = combined, date_list
+        
+        print("Writing data to the file...")
+        with open(csv_path, "w", encoding="utf-8") as file_out:
+            for chat in names_vals:
+                file_out.write(fb.convert(chat) + ";")
+                for val in names_vals[chat]:
+                    file_out.write(f'{val};')
+                file_out.write("\n")
+
+        print("Writing meta info...")
+        with open(meta_path, "w", encoding="utf-8") as file_out:
+            file_out.write(inbox.get_stats() + "\n")
+            file_out.write(inbox.get_times())
+            file_out.write(f'{periods_meta} ({period} days per period)\n')
+            
+            file_out.write("\nIncluded in the graph (selected users):\n")
+            for chat in inbox.get_selected():
+                if self.diags.anonymize:
+                    file_out.write(chat.index_verbose)
+                else:
+                    file_out.write(chat.name)
+                file_out.write(f'\n{chat.get_stats()}\n')
+
+
+
         
 
 def main():
@@ -84,6 +197,7 @@ def main():
     inbox = fb.Inbox(args.path_in)
 
     diags = Dialogs()
+    diags.output_path = args.path_out
     analyze = Analyze(diags)
 
     print()
@@ -91,11 +205,12 @@ def main():
 
     menu = [
         ("Analyze", (analyze.get_graph, inbox)), 
-        ("Select users", (diags.select_users, inbox)), 
+        ("Select chats", (diags.select_chats, inbox)), 
         ("Print statistics", (diags.print_stats_and_times, inbox)), 
         ("Abort", diags.abort)
     ]
     while True:
+        print()
         diags.print_numbered_menu_methods(menu)
         
 
