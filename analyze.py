@@ -1,5 +1,6 @@
 import argparse, os, sys
 import fb_disassemble as fb
+from tqdm import tqdm
 
 class Dialogs:
     def __init__(self):
@@ -7,18 +8,20 @@ class Dialogs:
         self.output_path = ""
         self.anonymize = False
 
+    
     def select_chats(self, inbox):
         self.print_stats_and_times(inbox)
         while True:
-            print()
             # TODO: so it won't crash when you misstype
             i = int(input("Input percentage of users to be selected: "))
             inbox.select_based_on_percentage(i)
-            print("")
+            print()
             self.print_stats_and_times(inbox)
+            print()
             if self.ask_Y_n("Continue?"):
                 break
                 
+    
     def print_stats_and_times(self, inbox):
         print(inbox.get_stats())
         print(inbox.get_times())
@@ -43,18 +46,29 @@ class Dialogs:
             else:
                 print("\nOnly digits allowed")
     
-    def print_numbered_menu_methods(self, methods):
+    def print_numbered_menu_return_result(self, methods):
         menu = []
         for method in methods:
             menu.append(method[0])
-        answ = self.print_numbered_menu(menu)
-        output = methods[answ - 1][1]
+        return methods[self.print_numbered_menu(menu) - 1][1]
+
+    def print_numbered_menu_and_execute(self, methods):
+        output = self.print_numbered_menu_return_result(methods)
         print()
-        if isinstance(output, tuple):
-            output[0](output[1])
+        if isinstance(output, list):
+            for out in output:
+                if isinstance(out, tuple):
+                    out[0](out[1])
+                else:
+                    out()
         else:
-            output()
+            out = output
+            if isinstance(out, tuple):
+                out[0](out[1])
+            else:
+                out()
     
+   
     def output_file_name_set(self):
         if self.output_file_name == "":
             print("Output file name not yet specified")
@@ -70,7 +84,7 @@ class Dialogs:
             print("Created folder", end=" ")
         else: 
             print("Using existing output folder", end=" ")
-        print(path)
+        print(path + '/')
 
     def check_output_file(self, path):
         if os.path.isfile(path):
@@ -83,6 +97,7 @@ class Dialogs:
     
     def cut_file_name(self, path):
         return path[path.rindex("/") + 1:]
+    
     
     def abort(self):
         print("Aborting")
@@ -99,7 +114,7 @@ class Analyze:
     def __init__(self, diags):
         self.diags = diags
 
-    def get_graph(self, inbox):
+    def save_graph(self, inbox):
         self.diags.output_file_name_set()
 
         out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
@@ -157,7 +172,7 @@ class Analyze:
         print("Writing data to the file...")
         with open(csv_path, "w", encoding="utf-8") as file_out:
             for chat in names_vals:
-                file_out.write(fb.convert(chat) + ";")
+                file_out.write(fb.remove_diacritic(chat) + ";")
                 for val in names_vals[chat]:
                     file_out.write(f'{val};')
                 file_out.write("\n")
@@ -176,27 +191,90 @@ class Analyze:
                     file_out.write(chat.name)
                 file_out.write(f'\n{chat.get_stats()}\n')
 
+    def save_most_used(self, inbox):
+        self.diags.output_file_name_set()
 
+        out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
+        self.diags.create_output_folder(out_path)
 
+        list_path = os.path.join(out_path, self.diags.output_file_name + ".txt")
+        if not self.diags.check_output_file(list_path): return
+
+        selected_names = []
+        options = [
+            ("All chats", [(inbox.select_based_on_percentage, 100), (self.diags.print_stats_and_times, inbox)]),
+            ("Only selected chats", (self.diags.select_chats, inbox)),
+            ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
+            ("Only the sender (uses the current selection)", (selected_names.append, inbox.chats[0].meta.participants[1]))
+        ]
+        print()
+        self.diags.print_numbered_menu_and_execute(options)
+
+        print("Scrubbing the words...")
+        #unwanted_chars = ['?', '!', ',', '.']
+        unwanted_chars = "?!.,"
+        words = {}
+        for chat in inbox.get_selected():
+            for message in chat.messages:
+                if "content" in message:
+                    content = None
+                    if not selected_names or (selected_names and message["sender_name"] in selected_names):
+                        content = message["content"]
+                    if content:
+                        # all this formats the individual words so that there are as little duplicate entries as possible
+                        #content = (str(filter(lambda ch: ch not in unwanted_chars, fb.remove_diacritic(content.lower())))).split(" ")
+                        content = fb.remove_diacritic(content.lower().translate({ord(ch): None for ch in unwanted_chars})).split(" ")
+                        for word in content:
+                            if len(word) > 1 and len(word) < 20:
+                                if word in words:
+                                    words[word] += 1
+                                else:
+                                    words[word] = 1
+
+        print(f"\nThere are {len(words)} unique words")
+        limit = int(input("Type \"0\" to save all or specify the ammount: "))
+        if limit == 0 or limit > len(words): limit = len(words)
+
+        print("Sorting the words...")
+        words_sorted = {}
+        for i in tqdm(range(limit)):
+            max = 0
+            max_key = ""
+            for word in words:
+                if max < words[word]:
+                    max = words[word]
+                    max_key = word
+            words.pop(max_key)
+            words_sorted[max_key] = max
         
+        print(f"\nWriting {len(words_sorted)} words to the file")
+        with open(list_path, "w", encoding="utf-8") as file_out:
+            for i, word in enumerate(words_sorted):
+                file_out.write(f'{i}. {word}: {words_sorted[word]}\n')
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze data downloaded from facebook')
-    parser.add_argument('-i', dest='path_in', required=True, default='', help='Path to the inbox folder')
+    parser.add_argument('-i', dest='path_in', required=True, default='', help='Path to the /inbox/ folder')
     parser.add_argument('-o', dest='path_out', required=False, default='', help='Path to the output folder')
 
     args = parser.parse_args()
+    diags = Dialogs()
 
     args.path_in = os.path.normpath(args.path_in)
     if args.path_out == "":
         args.path_out = args.path_in[0:args.path_in.index("/messages") + 1]
         print("Path out set to:", args.path_out)
-    
-    
+        if not os.access(args.path_out, os.F_OK):
+            print("Failed to set the output path automatically, plese use the -o argument to se it manually")
+            diags.abort()
+    else:
+        if not os.access(args.path_out, os.F_OK):
+            print("Failed to access the output folder")
+            diags.abort()
+
     print("Loading files...")
     inbox = fb.Inbox(args.path_in)
 
-    diags = Dialogs()
     diags.output_path = args.path_out
     analyze = Analyze(diags)
 
@@ -204,14 +282,15 @@ def main():
     diags.print_stats_and_times(inbox)
 
     menu = [
-        ("Analyze", (analyze.get_graph, inbox)), 
+        ("Count messages per timeframe", (analyze.save_graph, inbox)),
+        ("Compile a list of most used words", (analyze.save_most_used, inbox)),
         ("Select chats", (diags.select_chats, inbox)), 
         ("Print statistics", (diags.print_stats_and_times, inbox)), 
         ("Abort", diags.abort)
     ]
     while True:
         print()
-        diags.print_numbered_menu_methods(menu)
+        diags.print_numbered_menu_and_execute(menu)
         
 
 
