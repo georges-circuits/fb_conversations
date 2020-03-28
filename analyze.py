@@ -1,4 +1,4 @@
-import argparse, os, sys
+import argparse, os, sys, signal
 import fb_disassemble as fb
 from tqdm import tqdm
 
@@ -9,30 +9,30 @@ class Dialogs:
         self.anonymize = False
 
     
-    def select_chats_percentage(self, inbox):
+    def select_chats(self, inbox):
         self.print_stats_and_times(inbox)
         while True:
+            print("Chose which chats to focus on")
+            options = [
+                ("All", inbox.TYPES["all"]),
+                ("Just regular", inbox.TYPES["regular"]),
+                ("Just groups", inbox.TYPES["group"]),
+                ("All other than regular and groups", inbox.TYPES["other"])
+            ]
+            chat_type = self.print_numbered_menu_return_result(options)
+
             # TODO: so it won't crash when you misstype
-            i = int(input("Input percentage of users to be selected: "))
-            inbox.select_based_on_percentage(i)
+            percent = input("Input percentage of messages to be selected (leave blank for all): ")
+            if percent:
+                percent = int(percent)
+            else:
+                percent = 100
+            
+            inbox.select_chats(percent, chat_type)
             print()
             self.print_stats_and_times(inbox)
-            print()
             if self.ask_Y_n("Continue?"):
-                break
-    
-    def select_chats_type(self, inbox):
-        self.print_stats_and_times(inbox)
-        selection = [
-            ("")
-        ]
-        while True:
-            inbox.select_based_on_percentage(i)
-            print()
-            self.print_stats_and_times(inbox)
-            print()
-            if self.ask_Y_n("Continue?"):
-                break            
+                break         
     
     def print_stats_and_times(self, inbox):
         print(inbox.get_stats())
@@ -69,7 +69,7 @@ class Dialogs:
             methods.append(("Go back", "__back"))
         output = self.print_numbered_menu_return_result(methods)
         print()
-        if "__back" in output:
+        if include_back and "__back" in output:
             return True
         if isinstance(output, list):
             for out in output:
@@ -84,7 +84,12 @@ class Dialogs:
             else:
                 out()
     
-   
+    def ask_anonymize(self):
+        print(f"Current setting: {self.anonymize}")
+        self.anonymize = self.ask_Y_n("Anonymize the data?")
+        self.check_output_file_name_anon()
+    
+
     def output_file_name_set(self):
         if self.output_file_name == "":
             print("Output file name not yet specified")
@@ -93,6 +98,19 @@ class Dialogs:
             print(f'Current output file name is: {self.output_file_name}')
             if not self.ask_Y_n("Do you want to keep it?"):
                 self.output_file_name = input("Enter output file name (without extension): ")
+        self.check_output_file_name_anon()
+    
+    def check_output_file_name_anon(self):
+        anon_designator = "_anon"
+        
+        if self.output_file_name:
+            if self.anonymize and not anon_designator in self.output_file_name:
+                self.output_file_name += anon_designator
+                print(f"{anon_designator} added to the file name")
+            
+            if not self.anonymize and anon_designator in self.output_file_name:
+                self.output_file_name.replace(anon_designator, "")
+                print(f"{anon_designator} removed from the file name")
     
     def create_output_folder(self, path):
         if not os.access(path, os.F_OK):
@@ -142,9 +160,15 @@ class Analyze:
         if not self.diags.check_output_file(meta_path): return
         print()
 
-        self.diags.select_chats(inbox)
-
-        period = int(input("\nEnter the number of days for a window: "))
+        options = [
+            ("Select chats", (self.diags.select_chats, inbox)),
+            ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
+        ]
+        print()
+        if self.diags.print_numbered_menu_and_execute(options, True):
+            return
+        
+        period = int(input("Enter the number of days for a window: "))
         period = period * 24 * 3600 * 1000
         periods_count = int(inbox.meta.period / period) + 1
         periods_meta = f'{fb.convert_ms_year(inbox.meta.period)} years split into {periods_count} periods'
@@ -152,6 +176,13 @@ class Analyze:
 
         print("Counting messages...\n")
         names_vals = {}
+
+        date_list = []
+        for i in range(periods_count - 1):
+            date = (fb.convert_ms(inbox.meta.oldest_timestamp + (i * period)))[0:10]
+            date_list.append(date)
+        names_vals["date"] = date_list
+
         # go through all chats...
         for chat in inbox.get_selected():          
             # initiate the dictionary
@@ -172,18 +203,19 @@ class Analyze:
                         if ms >= lowest and ms < highest:
                             names_vals[key][period_num] += 1
         
-        date_list = []
+        
         combined = []
         for i in range(periods_count - 1):
             sum = 0
             for name in names_vals:
-                sum += names_vals[name][i]
+                if not name == "date":
+                    sum += names_vals[name][i]
             combined.append(sum)
             #FIXME: (make nicer) cut just the date
-            date = (fb.convert_ms(inbox.meta.oldest_timestamp + (i * period)))[0:10]
-            date_list.append(date)
+            #date = (fb.convert_ms(inbox.meta.oldest_timestamp + (i * period)))[0:10]
+            #date_list.append(date)
         # add "combined" to the dict, add "date" key as the last line
-        names_vals["combined"], names_vals["date"] = combined, date_list
+        names_vals["combined"] = combined
         
         print("Writing data to the file...")
         with open(csv_path, "w", encoding="utf-8") as file_out:
@@ -213,13 +245,13 @@ class Analyze:
         out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
         self.diags.create_output_folder(out_path)
 
-        list_path = os.path.join(out_path, self.diags.output_file_name + ".txt")
+        list_path = os.path.join(out_path, self.diags.output_file_name + "_words.txt")
         if not self.diags.check_output_file(list_path): return
 
         selected_names = []
         options = [
-            ("All chats", [(inbox.select_based_on_percentage, 100), (self.diags.print_stats_and_times, inbox)]),
-            ("Only selected chats", (self.diags.select_chats_percentage, inbox)),
+            ("All chats", [(inbox.select_chats, 100), (self.diags.print_stats_and_times, inbox)]),
+            ("Only selected chats", (self.diags.select_chats, inbox)),
             ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
             ("Only the sender (uses the current selection)", (selected_names.append, inbox.chats[0].meta.participants[1]))
         ]
@@ -270,6 +302,8 @@ class Analyze:
                 file_out.write(f'{i}. {word}: {words_sorted[word]}\n')
 
 def main():
+    signal.signal(signal.SIGINT, signal_handler)
+    
     parser = argparse.ArgumentParser(description='Analyze data downloaded from facebook')
     parser.add_argument('-i', dest='path_in', required=True, default='', help='Path to the /inbox/ folder')
     parser.add_argument('-o', dest='path_out', required=False, default='', help='Path to the output folder')
@@ -301,15 +335,19 @@ def main():
     menu = [
         ("Count messages per timeframe", (analyze.save_graph, inbox)),
         ("Compile a list of most used words", (analyze.save_most_used, inbox)),
-        ("Select chats", (diags.select_chats_percentage, inbox)), 
+        ("Anonymize setting", diags.ask_anonymize),
+        ("Select chats", (diags.select_chats, inbox)), 
         ("Print statistics", (diags.print_stats_and_times, inbox)), 
-        ("Abort", diags.abort)
+        ("Exit", diags.abort)
     ]
     while True:
         print()
         diags.print_numbered_menu_and_execute(menu)
-        
 
+
+def signal_handler(sig, frame):
+    print("\n\nSIGINT received\nAborting")
+    sys.exit()
 
 if __name__ == '__main__':
     main()

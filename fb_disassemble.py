@@ -34,7 +34,7 @@ class Inbox:
         self.selected_count = 0
         self.selected_messages_count = 0
 
-        self.select_based_on_percentage(100)
+        self.select_chats()
 
     def get_stats(self):
         reg = self.count_chats_and_messages_for_type("Regular")
@@ -43,48 +43,52 @@ class Inbox:
         grp_sel = self.count_chats_and_messages_for_type("RegularGroup", True)
         oth = self.count_chats_and_messages_for_type("other")
         oth_sel = self.count_chats_and_messages_for_type("other", True)
-        return (
-            f'Stats:\n'
-            f'Number of chats loaded: {self.meta.files_count} ({self.selected_count} selected)\n'
-            f'Loaded messages: {self.meta.num_messages} ({self.selected_messages_count} selected)\n'
-            f'Average messages per conversation: {int(self.meta.num_messages / self.meta.files_count)} ({int(self.selected_messages_count / self.selected_count)} in selected chats)\n'
-            f'Currently selected {round(self.selected_count / self.meta.files_count * 100, 2)} % of chats ({round(self.selected_messages_count / self.meta.num_messages * 100, 2)} % of messages) - Selected/Loaded:\n' 
-            f'Regular chats: {reg_sel[1]}/{reg[1]} messages ({reg_sel[0]}/{reg[0]} chats)\n'
-            f'Group chats: {grp_sel[1]}/{grp[1]} messages ({grp_sel[0]}/{grp[0]} group chats)\n'
-            f'Other: {oth_sel[1]}/{oth[1]} messages ({oth_sel[0]}/{oth[0]} chats)\n'
-        )
+        try:
+            return (
+                f'Stats:\n'
+                f'Number of chats loaded: {self.meta.files_count} ({self.selected_count} selected)\n'
+                f'Loaded messages: {self.meta.num_messages} ({self.selected_messages_count} selected)\n'
+                f'Average messages per conversation: {int(self.meta.num_messages / self.meta.files_count)} ({int(self.selected_messages_count / self.selected_count)} in selected chats)\n'
+                f'Currently selected {round(self.selected_count / self.meta.files_count * 100, 2)} % of chats ({round(self.selected_messages_count / self.meta.num_messages * 100, 2)} % of messages) - Selected/Loaded:\n' 
+                f'Regular chats: {reg_sel[1]}/{reg[1]} messages ({reg_sel[0]}/{reg[0]} chats)\n'
+                f'Group chats: {grp_sel[1]}/{grp[1]} messages ({grp_sel[0]}/{grp[0]} group chats)\n'
+                f'Other: {oth_sel[1]}/{oth[1]} messages ({oth_sel[0]}/{oth[0]} chats)\n'
+            )
+        except:
+            return "Failed to generate statistics"
     
     def get_times(self):
-        return (
-            f'Time stats in selected (UTC):\n'
-            f'Oldest message: {convert_ms(self.meta.oldest_timestamp)}\n'
-            f'Newest message: {convert_ms(self.meta.newest_timestamp)}\n'
-            f'Which totals a period of {convert_ms_year(self.meta.period)} years\n'
-        )
+        try:
+            return (
+                f'Time stats in selected (UTC):\n'
+                f'Oldest message: {convert_ms(self.meta.oldest_timestamp)}\n'
+                f'Newest message: {convert_ms(self.meta.newest_timestamp)}\n'
+                f'Which totals a period of {convert_ms_year(self.meta.period)} years\n'
+            )
+        except:
+            return "Failed to get times"
 
-    def select_chats(self, percentage = 100, chat_type = self.TYPES["all"]):
-        self._order()
-        # calculates how many messages are needed to reach target percentage
-        m_needed = self.meta.num_messages * int(percentage) / 100
-        m_so_far = 0
-        
-        for user in self.chats:
-            if m_so_far < m_needed:
-                m_so_far += user.meta.num_messages
-                user.selected = True
-            else:
-                user.selected = False
-        
-        self._find_edge_messages_in_selected()
-        self._calculate_stats_in_selected()
-
-    def select_based_on_type(self, chat_type):
+    def select_chats(self, percentage = 100, chat_type = "all"):
         self._order()
         
+        # deselect all
         for chat in self.chats:
             chat.selected = False
+        
+        # select just the requested type
         for chat in self.get_chats_based_on_type(chat_type):
             chat.selected = True
+
+        # calculate how many messages are needed to reach target percentage
+        m_needed = self.meta.num_messages * int(percentage) / 100
+        m_so_far = 0
+        # deselect all after fulfilling the percentage
+        for chat in self.chats:
+            if m_so_far < m_needed:
+                if chat.selected:
+                    m_so_far += chat.meta.num_messages
+            else:
+                chat.selected = False
         
         self._find_edge_messages_in_selected()
         self._calculate_stats_in_selected()
