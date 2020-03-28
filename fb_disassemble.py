@@ -6,6 +6,13 @@ class Inbox:
     # creates the entire structure and performes some basic sorting and analysis
     def __init__(self, path):
 
+        self.TYPES = {
+            "regular": "Regular",
+            "group": "RegularGroup",
+            "other": "other",
+            "all": "all"
+        }
+        
         self.chats = []
         files = 0
         for entry in os.listdir(path):
@@ -55,7 +62,7 @@ class Inbox:
             f'Which totals a period of {convert_ms_year(self.meta.period)} years\n'
         )
 
-    def select_based_on_percentage(self, percentage):
+    def select_chats(self, percentage = 100, chat_type = self.TYPES["all"]):
         self._order()
         # calculates how many messages are needed to reach target percentage
         m_needed = self.meta.num_messages * int(percentage) / 100
@@ -67,6 +74,17 @@ class Inbox:
                 user.selected = True
             else:
                 user.selected = False
+        
+        self._find_edge_messages_in_selected()
+        self._calculate_stats_in_selected()
+
+    def select_based_on_type(self, chat_type):
+        self._order()
+        
+        for chat in self.chats:
+            chat.selected = False
+        for chat in self.get_chats_based_on_type(chat_type):
+            chat.selected = True
         
         self._find_edge_messages_in_selected()
         self._calculate_stats_in_selected()
@@ -112,13 +130,17 @@ class Inbox:
     def count_chats_and_messages_for_type(self, chat_type, only_in_selected = False):
         chats_count = 0
         messages_count = 0
-        for chat in self.chats:
+        for chat in self.get_chats_based_on_type(chat_type):
             if not only_in_selected or (only_in_selected and chat.is_selected()):
-                if "all" == chat_type or ("other" != chat_type and chat_type == chat.type) or ("other" == chat_type and not "Regular" in chat.type):
-                    chats_count += 1
-                    messages_count += chat.meta.num_messages
+                chats_count += 1
+                messages_count += chat.meta.num_messages
         return (chats_count, messages_count)
 
+    def get_chats_based_on_type(self, chat_type):
+        for chat in self.chats:
+            if "all" == chat_type or ("other" != chat_type and chat_type == chat.type) or ("other" == chat_type and not "Regular" in chat.type):
+                yield chat
+    
     def get_selected(self):
         for chat in self.chats:
             if chat.is_selected():

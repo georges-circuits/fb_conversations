@@ -9,7 +9,7 @@ class Dialogs:
         self.anonymize = False
 
     
-    def select_chats(self, inbox):
+    def select_chats_percentage(self, inbox):
         self.print_stats_and_times(inbox)
         while True:
             # TODO: so it won't crash when you misstype
@@ -20,7 +20,19 @@ class Dialogs:
             print()
             if self.ask_Y_n("Continue?"):
                 break
-                
+    
+    def select_chats_type(self, inbox):
+        self.print_stats_and_times(inbox)
+        selection = [
+            ("")
+        ]
+        while True:
+            inbox.select_based_on_percentage(i)
+            print()
+            self.print_stats_and_times(inbox)
+            print()
+            if self.ask_Y_n("Continue?"):
+                break            
     
     def print_stats_and_times(self, inbox):
         print(inbox.get_stats())
@@ -52,9 +64,13 @@ class Dialogs:
             menu.append(method[0])
         return methods[self.print_numbered_menu(menu) - 1][1]
 
-    def print_numbered_menu_and_execute(self, methods):
+    def print_numbered_menu_and_execute(self, methods, include_back = False):
+        if include_back:
+            methods.append(("Go back", "__back"))
         output = self.print_numbered_menu_return_result(methods)
         print()
+        if "__back" in output:
+            return True
         if isinstance(output, list):
             for out in output:
                 if isinstance(out, tuple):
@@ -203,12 +219,13 @@ class Analyze:
         selected_names = []
         options = [
             ("All chats", [(inbox.select_based_on_percentage, 100), (self.diags.print_stats_and_times, inbox)]),
-            ("Only selected chats", (self.diags.select_chats, inbox)),
+            ("Only selected chats", (self.diags.select_chats_percentage, inbox)),
             ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
             ("Only the sender (uses the current selection)", (selected_names.append, inbox.chats[0].meta.participants[1]))
         ]
         print()
-        self.diags.print_numbered_menu_and_execute(options)
+        if self.diags.print_numbered_menu_and_execute(options, True):
+            return
 
         print("Scrubbing the words...")
         #unwanted_chars = ['?', '!', ',', '.']
@@ -284,7 +301,7 @@ def main():
     menu = [
         ("Count messages per timeframe", (analyze.save_graph, inbox)),
         ("Compile a list of most used words", (analyze.save_most_used, inbox)),
-        ("Select chats", (diags.select_chats, inbox)), 
+        ("Select chats", (diags.select_chats_percentage, inbox)), 
         ("Print statistics", (diags.print_stats_and_times, inbox)), 
         ("Abort", diags.abort)
     ]
