@@ -319,7 +319,6 @@ class Analyze:
                         content = message["content"]
                     if content:
                         # all this formats the individual words so that there are as little duplicate entries as possible
-                        #content = (str(filter(lambda ch: ch not in unwanted_chars, fb.remove_diacritic(content.lower())))).split(" ")
                         content = fb.remove_diacritic(content.lower().translate({ord(ch): None for ch in unwanted_chars})).split(" ")
                         for word in content:
                             if len(word) > 1 and len(word) < 20:
@@ -334,6 +333,9 @@ class Analyze:
 
         print("Sorting the words...")
         words_sorted = {}
+        # takes a lot of time
+        #TODO: mark the first word from which there are just single word entries
+        # and use that as endstop
         for i in tqdm(range(limit)):
             max = 0
             max_key = ""
