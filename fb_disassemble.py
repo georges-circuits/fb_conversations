@@ -1,18 +1,17 @@
 import json, os, glob
 from datetime import datetime
 
+TYPES = {
+    "regular": "Regular",
+    "group": "RegularGroup",
+    "other": "other",
+    "all": "all"
+}
+
 class Inbox:
 
     # creates the entire structure and performes some basic sorting and analysis
-    def __init__(self, path):
-
-        self.TYPES = {
-            "regular": "Regular",
-            "group": "RegularGroup",
-            "other": "other",
-            "all": "all"
-        }
-        
+    def __init__(self, path):       
         self.chats = []
         files = 0
         for entry in os.listdir(path):
@@ -36,11 +35,13 @@ class Inbox:
 
         self.select_chats()
 
+    
+    # STATISTICS
     def get_stats(self):
-        reg = self.count_chats_and_messages_for_type("Regular")
-        reg_sel = self.count_chats_and_messages_for_type("Regular", True)
-        grp = self.count_chats_and_messages_for_type("RegularGroup")
-        grp_sel = self.count_chats_and_messages_for_type("RegularGroup", True)
+        reg = self.count_chats_and_messages_for_type("regular")
+        reg_sel = self.count_chats_and_messages_for_type("regular", True)
+        grp = self.count_chats_and_messages_for_type("group")
+        grp_sel = self.count_chats_and_messages_for_type("group", True)
         oth = self.count_chats_and_messages_for_type("other")
         oth_sel = self.count_chats_and_messages_for_type("other", True)
         try:
@@ -68,6 +69,19 @@ class Inbox:
         except:
             return "Failed to get times"
 
+    # chat_type from TYPES
+    # returns tuple (chats_count, messages_count)
+    def count_chats_and_messages_for_type(self, chat_type, only_in_selected = False):
+        chats_count = 0
+        messages_count = 0
+        for chat in self.get_chats_based_on_type(chat_type):
+            if not only_in_selected or (only_in_selected and chat.is_selected()):
+                chats_count += 1
+                messages_count += chat.meta.num_messages
+        return (chats_count, messages_count)
+    
+    
+    # CHAT SELECTION
     def select_chats(self, percentage = 100, chat_type = "all"):
         self._order()
         
@@ -92,7 +106,23 @@ class Inbox:
         
         self._find_edge_messages_in_selected()
         self._calculate_stats_in_selected()
+    
+    # chat_type from TYPES
+    # generator function
+    def get_chats_based_on_type(self, chat_type):
+        chat_type = TYPES[chat_type]
+        for chat in self.chats:
+            if "all" == chat_type or ("other" != chat_type and chat_type == chat.type) or ("other" == chat_type and not "Regular" in chat.type):
+                yield chat
+    
+    # generator function
+    def get_selected(self):
+        for chat in self.chats:
+            if chat.is_selected():
+                yield chat
 
+    
+    # INTERNAL
     def _find_edge_messages_in_selected(self):
         print("Finding oldest and newest message...")
         self.meta.oldest_timestamp = 10 ** 20
@@ -128,27 +158,6 @@ class Inbox:
         for chat in self.get_selected():
             self.selected_count += 1
             self.selected_messages_count += chat.meta.num_messages
-
-    # chat_type: "Regular", "RegularGroup", "other", "all"
-    # returns tuple (chats_count, messages_count)
-    def count_chats_and_messages_for_type(self, chat_type, only_in_selected = False):
-        chats_count = 0
-        messages_count = 0
-        for chat in self.get_chats_based_on_type(chat_type):
-            if not only_in_selected or (only_in_selected and chat.is_selected()):
-                chats_count += 1
-                messages_count += chat.meta.num_messages
-        return (chats_count, messages_count)
-
-    def get_chats_based_on_type(self, chat_type):
-        for chat in self.chats:
-            if "all" == chat_type or ("other" != chat_type and chat_type == chat.type) or ("other" == chat_type and not "Regular" in chat.type):
-                yield chat
-    
-    def get_selected(self):
-        for chat in self.chats:
-            if chat.is_selected():
-                yield chat
 
 class Chat:
 
@@ -224,7 +233,7 @@ class Chat:
         return (
             f'Messages: {self.meta.num_messages}\n'
             f'First-last message: {convert_ms_year(self.meta.period)} years\n'
-            f'Messages per day: {round(self.meta.num_messages / (self.meta.period / 1000 / 3600 / 24), 2)}\n'
+            f'Messages per day: {round(self.meta.num_messages / (convert_ms_to_day(self.meta.period)), 2)}\n'
             f'Oldest message: {convert_ms(self.meta.oldest_timestamp)}\n'
             f'Newest message: {convert_ms(self.meta.newest_timestamp)}\n'
             f'Chat type: {self.type}\n'
@@ -261,6 +270,9 @@ class Meta:
             f'path: {self.path}\n'
         )
 
+
+def convert_ms_to_day(value_ms):
+    return int(value_ms / 1000 / 3600 / 24)
 
 def convert_ms(value_ms):
     return datetime.utcfromtimestamp(value_ms / 1000).strftime('%d.%m.%Y %H:%M:%S')

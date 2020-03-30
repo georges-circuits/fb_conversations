@@ -2,6 +2,59 @@ import argparse, os, sys, signal
 import fb_disassemble as fb
 from tqdm import tqdm
 
+
+class UI:
+    def __init__(self, diags, analyze):
+        self.diags = diags
+        self.analyze = analyze
+
+    def graph(self, inbox):
+        self.diags.output_file_name_set()
+
+        out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
+        self.diags.create_output_folder(out_path)
+
+        csv_path = os.path.join(out_path, self.diags.output_file_name + ".csv")
+        meta_path = os.path.join(out_path, self.diags.output_file_name + "_meta.txt")
+        if not self.diags.check_output_file(csv_path): return
+        if not self.diags.check_output_file(meta_path): return
+        print()
+
+        options = [
+            ("Select chats", (self.diags.select_chats, inbox)),
+            ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
+        ]
+        print()
+        if self.diags.print_numbered_menu_and_execute(options, True):
+            return
+        
+        period = int(input("Enter the number of days for a window: "))
+        period = period * 24 * 3600 * 1000
+
+        self.analyze.save_graph(inbox, period, csv_path, meta_path)
+
+    def words(self, inbox):
+        self.diags.output_file_name_set()
+
+        out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
+        self.diags.create_output_folder(out_path)
+
+        list_path = os.path.join(out_path, self.diags.output_file_name + "_words.txt")
+        if not self.diags.check_output_file(list_path): return
+
+        selected_names = []
+        options = [
+            ("All chats", [(inbox.select_chats, 100), (self.diags.print_stats_and_times, inbox)]),
+            ("Only selected chats", (self.diags.select_chats, inbox)),
+            ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
+            ("Only the sender (uses the current selection)", (selected_names.append, inbox.chats[0].meta.participants[1]))
+        ]
+        print()
+        if self.diags.print_numbered_menu_and_execute(options, True):
+            return
+                
+        self.analyze.save_most_used(inbox, selected_names, list_path)
+
 class Dialogs:
     def __init__(self):
         self.output_file_name = ""
@@ -9,15 +62,16 @@ class Dialogs:
         self.anonymize = False
 
     
+    # LIBRARY QUERIES
     def select_chats(self, inbox):
         self.print_stats_and_times(inbox)
         while True:
             print("Chose which chats to focus on")
             options = [
-                ("All", inbox.TYPES["all"]),
-                ("Just regular", inbox.TYPES["regular"]),
-                ("Just groups", inbox.TYPES["group"]),
-                ("All other than regular and groups", inbox.TYPES["other"])
+                ("All", "all"),
+                ("Just regular", "regular"),
+                ("Just groups", "group"),
+                ("All other than regular and groups", "other")
             ]
             chat_type = self.print_numbered_menu_return_result(options)
 
@@ -90,6 +144,7 @@ class Dialogs:
         self.check_output_file_name_anon()
     
 
+    # FILE HANDLING
     def output_file_name_set(self):
         if self.output_file_name == "":
             print("Output file name not yet specified")
@@ -120,9 +175,9 @@ class Dialogs:
             print("Using existing output folder", end=" ")
         print(path + '/')
 
-    def check_output_file(self, path):
+    def check_output_file(self, path, force = False):
         if os.path.isfile(path):
-            if not self.ask_Y_n(f'File {self.cut_file_name(path)} already exist. Overwrite?'):
+            if not force and not self.ask_Y_n(f'File {self.cut_file_name(path)} already exist. Overwrite?'):
                 return False
         with open(path, "w") as _:
             pass
@@ -148,7 +203,15 @@ class Analyze:
     def __init__(self, diags):
         self.diags = diags
 
-    def save_graph(self, inbox):
+    def predefined_analyze(self, inbox): 
+        # Enter the number of days for a window:
+        period = 30
+        # Chat selection:
+        percentage = 80
+        chat_type = "all"
+
+        print(f"Running in predefined mode!\nperiod: {period}, percentage: {percentage}, chat_type: {chat_type}")      
+        # only thing that the user needs to set
         self.diags.output_file_name_set()
 
         out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
@@ -156,20 +219,21 @@ class Analyze:
 
         csv_path = os.path.join(out_path, self.diags.output_file_name + ".csv")
         meta_path = os.path.join(out_path, self.diags.output_file_name + "_meta.txt")
-        if not self.diags.check_output_file(csv_path): return
-        if not self.diags.check_output_file(meta_path): return
+        list_path = os.path.join(out_path, self.diags.output_file_name + "_words.txt")
+        self.diags.check_output_file(csv_path, True)
+        self.diags.check_output_file(meta_path, True)
+        self.diags.check_output_file(list_path, True)
         print()
-
-        options = [
-            ("Select chats", (self.diags.select_chats, inbox)),
-            ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
-        ]
-        print()
-        if self.diags.print_numbered_menu_and_execute(options, True):
-            return
         
-        period = int(input("Enter the number of days for a window: "))
+        inbox.select_chats(percentage, chat_type)      
         period = period * 24 * 3600 * 1000
+        self.save_graph(inbox, period, csv_path, meta_path)
+
+        """ inbox.select_chats(100, "regular")
+        selected_names = [inbox.chats[0].meta.participants[1]]
+        self.save_most_used(inbox, selected_names, list_path) """
+
+    def save_graph(self, inbox, period, csv_path, meta_path):
         periods_count = int(inbox.meta.period / period) + 1
         periods_meta = f'{fb.convert_ms_year(inbox.meta.period)} years split into {periods_count} periods'
         print(periods_meta)
@@ -229,7 +293,7 @@ class Analyze:
         with open(meta_path, "w", encoding="utf-8") as file_out:
             file_out.write(inbox.get_stats() + "\n")
             file_out.write(inbox.get_times())
-            file_out.write(f'{periods_meta} ({period} days per period)\n')
+            file_out.write(f'{periods_meta} ({fb.convert_ms_to_day(period)} days per period)\n')
             
             file_out.write("\nIncluded in the graph (selected users):\n")
             for chat in inbox.get_selected():
@@ -239,29 +303,13 @@ class Analyze:
                     file_out.write(chat.name)
                 file_out.write(f'\n{chat.get_stats()}\n')
 
-    def save_most_used(self, inbox):
-        self.diags.output_file_name_set()
-
-        out_path = os.path.join(self.diags.output_path, self.diags.output_file_name)
-        self.diags.create_output_folder(out_path)
-
-        list_path = os.path.join(out_path, self.diags.output_file_name + "_words.txt")
-        if not self.diags.check_output_file(list_path): return
-
-        selected_names = []
-        options = [
-            ("All chats", [(inbox.select_chats, 100), (self.diags.print_stats_and_times, inbox)]),
-            ("Only selected chats", (self.diags.select_chats, inbox)),
-            ("Leave the current selection", (self.diags.print_stats_and_times, inbox)),
-            ("Only the sender (uses the current selection)", (selected_names.append, inbox.chats[0].meta.participants[1]))
-        ]
-        print()
-        if self.diags.print_numbered_menu_and_execute(options, True):
-            return
+    def save_most_used(self, inbox, selected_names, list_path):
+        if selected_names:
+            print(f"Selected participant name: {selected_names}")
+        
+        unwanted_chars = "?!.,"
 
         print("Scrubbing the words...")
-        #unwanted_chars = ['?', '!', ',', '.']
-        unwanted_chars = "?!.,"
         words = {}
         for chat in inbox.get_selected():
             for message in chat.messages:
@@ -301,6 +349,7 @@ class Analyze:
             for i, word in enumerate(words_sorted):
                 file_out.write(f'{i}. {word}: {words_sorted[word]}\n')
 
+
 def main():
     signal.signal(signal.SIGINT, signal_handler)
     
@@ -328,16 +377,18 @@ def main():
 
     diags.output_path = args.path_out
     analyze = Analyze(diags)
+    ui = UI(diags, analyze)
 
     print()
     diags.print_stats_and_times(inbox)
 
     menu = [
-        ("Count messages per timeframe", (analyze.save_graph, inbox)),
-        ("Compile a list of most used words", (analyze.save_most_used, inbox)),
+        ("Count messages per timeframe", (ui.graph, inbox)),
+        ("Compile a list of most used words", (ui.words, inbox)),
         ("Anonymize setting", diags.ask_anonymize),
         ("Select chats", (diags.select_chats, inbox)), 
         ("Print statistics", (diags.print_stats_and_times, inbox)), 
+        ("Run predefined", (analyze.predefined_analyze, inbox)),
         ("Exit", diags.abort)
     ]
     while True:
