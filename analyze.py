@@ -60,8 +60,7 @@ class Dialogs:
         self.output_file_name = ""
         self.output_path = ""
         self.anonymize = False
-
-    
+   
     # LIBRARY QUERIES
     def select_chats(self, inbox):
         self.print_stats_and_times(inbox)
@@ -142,7 +141,6 @@ class Dialogs:
         print(f"Current setting: {self.anonymize}")
         self.anonymize = self.ask_Y_n("Anonymize the data?")
         self.check_output_file_name_anon()
-    
 
     # FILE HANDLING
     def output_file_name_set(self):
