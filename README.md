@@ -2,6 +2,7 @@
 
 Info and backstory are [here](https://manakjiri.eu/#facebook_datamining).
 
+Download data from Facebook:
 ![how to download data from facebook](navod.jpg)
 
 Usage:
